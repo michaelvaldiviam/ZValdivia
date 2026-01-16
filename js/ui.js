@@ -508,7 +508,7 @@ export class UIManager {
     state.linesVisible = !state.linesVisible;
     if (this.toggleLinesBtn) {
       this.toggleLinesBtn.classList.toggle('primary', state.linesVisible);
-      this.toggleLinesBtn.textContent = state.linesVisible ? 'Líneas activadas' : 'Líneas desactivadas';
+      this.toggleLinesBtn.textContent = state.linesVisible ? 'Aristas activadas' : 'Aristas desactivadas';
     }
     this.sceneManager.requestRebuild();
   }
