@@ -550,7 +550,7 @@ export class UIManager {
     state.cutActive = !state.cutActive;
     if (this.cutBtn) {
       this.cutBtn.classList.toggle('active', state.cutActive);
-      this.cutBtn.textContent = state.cutActive ? 'Desactivar corte' : 'Activar corte';
+      this.cutBtn.textContent = state.cutActive ? 'Desactivar porción' : 'Crear porción';
     }
     
     // Los controles están siempre visibles, solo activamos/desactivamos el corte
