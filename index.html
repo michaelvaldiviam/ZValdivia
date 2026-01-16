@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zonohedro Polar - ZValdivia</title>
+    
+    <link rel="stylesheet" href="css/styles.css">
+
+    <!-- jsPDF para generación de reportes PDF -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
+
+    <script type="module" src="js/main.js"></script>
+</head>
+<body>
+  <canvas id="c"></canvas>
+
+  <div class="main-controls" id="mainControls">
+    <div class="card compact-card">
+      <div class="header-compact">
+        <div class="title-compact">
+          <h1>Zonohedro Polar</h1>
+          <span class="status" id="statusBadge">N:11 a:39.8°</span>
+        </div>
+        <div class="header-buttons">
+          <button class="icon-btn" id="toggleInfoBtn" title="Mostrar/Ocultar Info">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="8" cy="8" r="6"/>
+              <line x1="8" y1="6" x2="8" y2="8"/>
+              <line x1="8" y1="10" x2="8.01" y2="10"/>
+            </svg>
+          </button>
+          <button class="icon-btn" id="toggleAdvancedBtn" title="Opciones avanzadas">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="8" cy="8" r="3"/>
+              <line x1="8" y1="1" x2="8" y2="4"/>
+              <line x1="8" y1="12" x2="8" y2="15"/>
+              <line x1="1" y1="8" x2="4" y2="8"/>
+              <line x1="12" y1="8" x2="15" y2="8"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="main-params">
+        <div class="param-group-inline">
+          <label>N (Lados)</label>
+          <input type="number" class="param-input-inline" id="nNum" value="11" min="3" max="100" step="1">
+          <input type="range" class="param-slider-inline" id="nRange" value="11" min="3" max="100" step="1">
+        </div>
+
+        <div class="param-group-inline">
+          <label>α (Ángulo)</label>
+          <input type="number" class="param-input-inline" id="aNum" value="39.8" min="0.1" max="89.9" step="0.1">
+          <input type="range" class="param-slider-inline" id="aRange" value="39.8" min="0.1" max="89.9" step="0.1">
+        </div>
+
+        <div class="param-group-inline">
+          <label>Dmax (Diámetro)</label>
+          <input type="number" class="param-input-inline" id="dmaxNum" value="10" min="0.1" max="50" step="0.1">
+          <input type="range" class="param-slider-inline" id="dmaxRange" value="10" min="0.1" max="50" step="0.1">
+        </div>
+
+        <div class="cut-group-inline">
+          <div class="cut-header-inline">
+            <!-- Controles ANTES del botón -->
+            <div class="cut-level-control">
+              <label>Niveles visibles</label>
+              <input type="number" class="cut-level-input" id="cutLevelNum" value="5" min="1" max="10">
+              <input type="range" class="cut-level-slider" id="cutLevelRange" value="5" min="1" max="10">
+            </div>
+            <!-- Botón de activar/desactivar -->
+            <button class="btn-cut-inline" id="cutBtn">Activar corte</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="quick-info" id="quickInfo">
+        <div class="info-item">
+          <span>Altura Total</span>
+          <span class="mono" id="infoH">0.00</span>
+        </div>
+        <div class="info-item">
+          <span>h₁</span>
+          <span class="mono" id="infoH1">0.000</span>
+        </div>
+        <div class="info-item">
+          <span>Caras</span>
+          <span class="mono" id="infoFaces">0</span>
+        </div>
+        <div class="info-item">
+          <span id="diameterLabel">Dmax</span>
+          <span class="mono" id="infoDiameter">0.00</span>
+        </div>
+        <div class="info-item">
+          <span>Lado rombo</span>
+          <span class="mono" id="infoRhombusSide">0.000</span>
+        </div>
+        <div class="info-item" id="triangleBaseInfo" style="display: none;">
+          <span>Base triángulo</span>
+          <span class="mono" id="infoTriangleBase">0.000</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="advanced-panel" id="advancedPanel">
+    <div class="card">
+      <div class="header">
+        <div class="title">
+          <h2>Opciones Avanzadas</h2>
+        </div>
+        <button class="icon-btn" id="closeAdvancedBtn">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="1" y1="1" x2="13" y2="13"/>
+            <line x1="13" y1="1" x2="1" y2="13"/>
+          </svg>
+        </button>
+      </div>
+
+      <div class="advanced-controls">
+        <div class="control-section">
+          <h3 class="section-title">Visualización</h3>
+          <div class="btn-grid-2col">
+            <button class="btn" id="facesBtn">Caras desactivadas</button>
+            <button class="btn primary" id="colorByLevelBtn">Skin: Arcoíris</button>
+            <button class="btn primary" id="togglePolysBtn">Polígonos activados</button>
+            <button class="btn primary" id="toggleLinesBtn">Líneas activadas</button>
+            <button class="btn primary" id="toggleAxisBtn">Eje activado</button>
+            <button class="btn" id="fitBtn">Ajustar cámara</button>
+          </div>
+        </div>
+
+        <div class="control-section">
+          <h3 class="section-title">Rotación Automática</h3>
+          <div class="rotation-control">
+            <button class="btn btn-rotation" id="rotationBtn">▶ Rotar</button>
+            <div class="rotation-speed-control">
+              <label class="small-label">Velocidad</label>
+              <input type="range" class="rotation-slider" id="rotationSpeed" value="30" min="1" max="100" step="1">
+            </div>
+          </div>
+        </div>
+
+        <div class="control-section">
+          <h3 class="section-title">Exportar</h3>
+          <button class="btn btn-full primary" id="exportObjBtn">
+            Descargar OBJ
+          </button>
+          <button class="btn btn-full" id="exportPdfBtn">
+            Generar Reporte PDF
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>
