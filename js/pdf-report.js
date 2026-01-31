@@ -38,7 +38,6 @@ export class PDFReporter {
     // Guardar PDF
     const filename = `Reporte_Zonohedro_N${state.N}_a${state.aDeg.toFixed(1)}.pdf`;
     doc.save(filename);
-
     console.log('✅ Reporte PDF generado exitosamente');
   }
 
@@ -57,6 +56,9 @@ export class PDFReporter {
 
     // Niveles visibles
     const nivelesVisibles = cutActive ? N - cutLevel : N;
+    
+    // ✅ CORRECCIÓN: Calcular altura visible basada en niveles visibles
+    const alturaVisible = h1 * nivelesVisibles;
 
     // Lado del rombo (arista)
     const k = 1;
@@ -75,7 +77,6 @@ export class PDFReporter {
     // Contar rombos y triángulos
     let totalRombos = 0;
     let totalTriangulos = 0;
-
     if (rhombiData.length > 0) {
       rhombiData.forEach(level => {
         level.rhombi.forEach(face => {
@@ -94,7 +95,7 @@ export class PDFReporter {
       aDeg,
       diametroCutPlane,
       nivelesVisibles,
-      Htotal,
+      Htotal: alturaVisible,  // ✅ Usar altura calculada en lugar de Htotal del state
       aristaRombo,
       baseTriangulo,
       totalRombos,
@@ -111,7 +112,6 @@ export class PDFReporter {
     doc.setFontSize(20);
     doc.setFont(undefined, 'bold');
     doc.text('REPORTE TÉCNICO - ZONOHEDRO POLAR', 148, 15, { align: 'center' });
-
     doc.setFontSize(12);
     doc.setFont(undefined, 'normal');
     doc.text('Vista Ortogonal Plano XZ (Lateral)', 148, 22, { align: 'center' });
@@ -140,13 +140,10 @@ export class PDFReporter {
     doc.text('Parámetros:', startX, currentY);
     currentY += lineHeight;
     doc.setFont(undefined, 'normal');
-
     doc.text(`Dmax: ${data.Dmax.toFixed(2)} unidades`, startX + 5, currentY);
     currentY += lineHeight;
-
     doc.text(`N (Lados): ${data.N}`, startX + 5, currentY);
     currentY += lineHeight;
-
     doc.text(`Ángulo α: ${data.aDeg.toFixed(1)}°`, startX + 5, currentY);
     currentY += lineHeight + 3;
 
@@ -155,10 +152,8 @@ export class PDFReporter {
     doc.text('Dimensiones:', startX, currentY);
     currentY += lineHeight;
     doc.setFont(undefined, 'normal');
-
     doc.text(`Altura Total: ${data.Htotal.toFixed(2)} unidades`, startX + 5, currentY);
     currentY += lineHeight;
-
     doc.text(`Arista (lado rombo): ${data.aristaRombo.toFixed(3)} unidades`, startX + 5, currentY);
     currentY += lineHeight + 3;
 
@@ -168,13 +163,10 @@ export class PDFReporter {
       doc.text('Plano de Corte:', startX, currentY);
       currentY += lineHeight;
       doc.setFont(undefined, 'normal');
-
       doc.text(`Diámetro corte: ${data.diametroCutPlane.toFixed(2)} unidades`, startX + 5, currentY);
       currentY += lineHeight;
-
       doc.text(`Niveles visibles: ${data.nivelesVisibles}`, startX + 5, currentY);
       currentY += lineHeight;
-
       doc.text(`Base triángulo: ${data.baseTriangulo.toFixed(3)} unidades`, startX + 5, currentY);
       currentY += lineHeight + 3;
     }
@@ -184,10 +176,8 @@ export class PDFReporter {
     doc.text('Caras:', startX, currentY);
     currentY += lineHeight;
     doc.setFont(undefined, 'normal');
-
     doc.text(`Rombos totales: ${data.totalRombos}`, startX + 5, currentY);
     currentY += lineHeight;
-
     if (data.cutActive) {
       doc.text(`Triángulos totales: ${data.totalTriangulos}`, startX + 5, currentY);
       currentY += lineHeight;
@@ -214,7 +204,6 @@ export class PDFReporter {
     doc.setFontSize(20);
     doc.setFont(undefined, 'bold');
     doc.text('REPORTE TÉCNICO - ZONOHEDRO POLAR', 148, 15, { align: 'center' });
-
     doc.setFontSize(12);
     doc.setFont(undefined, 'normal');
     doc.text('Vista Ortogonal Plano XY (Superior)', 148, 22, { align: 'center' });
@@ -248,7 +237,7 @@ export class PDFReporter {
    */
   static async captureOrthographicView(scene, camera, renderer, view) {
     const THREE = window.THREE;
-    
+
     // Guardar estado actual
     const originalCamera = camera;
     const originalSize = new THREE.Vector2();
@@ -257,7 +246,6 @@ export class PDFReporter {
     // Crear cámara ortográfica
     const aspect = 1; // Cuadrada
     const frustumSize = state.Dmax * 1.5;
-    
     const orthoCamera = new THREE.OrthographicCamera(
       frustumSize * aspect / -2,
       frustumSize * aspect / 2,
@@ -331,7 +319,6 @@ export class PDFReporter {
       const prev = vertices[(i - 1 + vertices.length) % vertices.length];
       const current = vertices[i];
       const next = vertices[(i + 1) % vertices.length];
-
       const v1 = new THREE.Vector3().subVectors(prev, current).normalize();
       const v2 = new THREE.Vector3().subVectors(next, current).normalize();
       const angle = Math.acos(Math.max(-1, Math.min(1, v1.dot(v2))));
@@ -414,7 +401,7 @@ export class PDFReporter {
 
       // Encontrar la cara adyacente que comparte esta arista
       const adjacentFace = this.findAdjacentFace(edgeStart, edgeEnd, level, face);
-
+      
       if (adjacentFace) {
         // Calcular normal de la cara adyacente
         const av0 = adjacentFace.vertices[0];
@@ -429,7 +416,6 @@ export class PDFReporter {
         const dotProduct = currentNormal.dot(adjacentNormal);
         const angleRad = Math.acos(Math.max(-1, Math.min(1, dotProduct)));
         const dihedralAngle = 180 - (angleRad * 180 / Math.PI);
-
         angles.push(dihedralAngle);
       } else {
         // Si no hay cara adyacente (borde del corte o vértice superior/inferior)
@@ -461,7 +447,7 @@ export class PDFReporter {
     // Buscar en niveles adyacentes (nivel-1, nivel, nivel+1)
     for (const levelData of rhombiData) {
       if (Math.abs(levelData.level - currentLevel) > 1) continue;
-
+      
       for (const face of levelData.rhombi) {
         if (face === currentFace) continue;
 
@@ -536,13 +522,13 @@ export class PDFReporter {
 
       // Tomar la primera cara del nivel como representativa
       const representativeFace = levelData.rhombi[0];
-      
+
       // Calcular detalles geométricos
       const faceDetails = this.calculateFaceDetails(representativeFace, levelData.level);
 
       // Agregar página
       doc.addPage();
-      
+
       // Dibujar la página de detalle
       this.drawFaceDetailPage(doc, faceDetails, levelData.level);
     }
@@ -561,7 +547,6 @@ export class PDFReporter {
     doc.setFontSize(18);
     doc.setFont(undefined, 'bold');
     doc.text(`DETALLE DE CARA - ${levelName.toUpperCase()}`, 148, 15, { align: 'center' });
-
     doc.setFontSize(11);
     doc.setFont(undefined, 'normal');
     doc.text(`Tipo: ${isTriangle ? 'Triángulo' : 'Rombo'} | Cantidad por nivel: ${quantity} piezas`, 148, 22, { align: 'center' });
@@ -581,10 +566,8 @@ export class PDFReporter {
 
     doc.setFontSize(10);
     doc.setFont(undefined, 'normal');
-
     doc.text(`Ancho horizontal: ${horizontalWidth.toFixed(3)} unidades`, startX + 3, currentY);
     currentY += lineHeight;
-
     doc.text(`Alto vertical: ${verticalHeight.toFixed(3)} unidades`, startX + 3, currentY);
     currentY += lineHeight + 3;
 
@@ -593,7 +576,6 @@ export class PDFReporter {
     doc.text('LONGITUD DE LADOS', startX, currentY);
     currentY += lineHeight + 2;
     doc.setFont(undefined, 'normal');
-
     sideLengths.forEach((length, i) => {
       doc.text(`Lado ${i + 1}: ${length.toFixed(3)} unidades`, startX + 3, currentY);
       currentY += lineHeight;
@@ -605,7 +587,6 @@ export class PDFReporter {
     doc.text('ÁNGULOS INTERNOS', startX, currentY);
     currentY += lineHeight + 2;
     doc.setFont(undefined, 'normal');
-
     vertexAngles.forEach((angle, i) => {
       doc.text(`Vértice ${i + 1}: ${angle.toFixed(2)}°`, startX + 3, currentY);
       currentY += lineHeight;
@@ -617,7 +598,6 @@ export class PDFReporter {
     doc.text('ÁNGULOS DIEDROS', startX, currentY);
     currentY += lineHeight + 2;
     doc.setFont(undefined, 'normal');
-
     dihedralAngles.forEach((angle, i) => {
       doc.text(`Arista ${i + 1}: ${angle.toFixed(2)}°`, startX + 3, currentY);
       currentY += lineHeight;
@@ -629,7 +609,6 @@ export class PDFReporter {
     doc.text('INFORMACIÓN ADICIONAL', startX, currentY);
     currentY += lineHeight + 2;
     doc.setFont(undefined, 'normal');
-
     doc.text(`Nivel: ${level}`, startX + 3, currentY);
     currentY += lineHeight;
     doc.text(`Grupo: ${levelName}`, startX + 3, currentY);
@@ -696,11 +675,9 @@ export class PDFReporter {
     const points2D = [];
     vertices.forEach(v => {
       const relativePos = new THREE.Vector3().subVectors(v, center);
-      
       // Proyectar al plano local (usando X e Y locales)
       const x = relativePos.dot(localX);
       const y = relativePos.dot(localY);
-      
       points2D.push({ x, y });
     });
 
@@ -708,7 +685,6 @@ export class PDFReporter {
     // El vértice superior debe estar en la dirección +Y (arriba en el PDF)
     const topPoint = points2D[topVertexIndex];
     const angleToTop = Math.atan2(topPoint.x, topPoint.y); // Ángulo desde +Y
-    
     const rotatedPoints = points2D.map(p => {
       const cos = Math.cos(-angleToTop);
       const sin = Math.sin(-angleToTop);
@@ -721,7 +697,6 @@ export class PDFReporter {
     // 7. Encontrar bounding box y calcular escala
     let minX = Infinity, maxX = -Infinity;
     let minY = Infinity, maxY = -Infinity;
-    
     rotatedPoints.forEach(p => {
       minX = Math.min(minX, p.x);
       maxX = Math.max(maxX, p.x);
@@ -737,13 +712,12 @@ export class PDFReporter {
     // 8. Centrar y escalar puntos para el PDF
     const finalPoints = rotatedPoints.map(p => ({
       x: centerX + (p.x - (minX + maxX) / 2) * scale,
-      y: centerY - (p.y - (minY + maxY) / 2) * scale  // Invertir Y para PDF
+      y: centerY - (p.y - (minY + maxY) / 2) * scale // Invertir Y para PDF
     }));
 
     // 9. Dibujar el polígono
     doc.setDrawColor(0);
     doc.setLineWidth(0.5);
-    
     for (let i = 0; i < finalPoints.length; i++) {
       const p1 = finalPoints[i];
       const p2 = finalPoints[(i + 1) % finalPoints.length];
@@ -761,35 +735,34 @@ export class PDFReporter {
     // 11. Anotar longitudes de lados con número de arista
     doc.setFontSize(9);
     doc.setTextColor(0, 0, 200);
-    
     for (let i = 0; i < finalPoints.length; i++) {
       const p1 = finalPoints[i];
       const p2 = finalPoints[(i + 1) % finalPoints.length];
       const midX = (p1.x + p2.x) / 2;
       const midY = (p1.y + p2.y) / 2;
-      
+
       // Vector perpendicular a la línea (hacia afuera)
       const dx = p2.x - p1.x;
       const dy = p2.y - p1.y;
       const len = Math.sqrt(dx * dx + dy * dy);
-      
+
       if (len > 0) {
         // Vector perpendicular (rotado 90° hacia afuera)
         const perpX = -dy / len;
         const perpY = dx / len;
-        
+
         // Determinar si el perpendicular apunta hacia afuera o adentro
         const toCenterX = centerX - midX;
         const toCenterY = centerY - midY;
         const dotProduct = perpX * toCenterX + perpY * toCenterY;
-        
+
         // Si apunta hacia el centro, invertir
         const direction = dotProduct > 0 ? -1 : 1;
+
         const offsetDist = 8;
-        
         const textX = midX + perpX * offsetDist * direction;
         const textY = midY + perpY * offsetDist * direction;
-        
+
         // Dibujar etiqueta con número de arista y longitud
         doc.setFont(undefined, 'bold');
         doc.text(`A${i + 1}:`, textX, textY - 1.5, { align: 'center' });
@@ -801,19 +774,18 @@ export class PDFReporter {
     // 12. Anotar ángulos internos en vértices
     doc.setTextColor(200, 0, 0);
     doc.setFontSize(8);
-    
     finalPoints.forEach((p, i) => {
       // Vector desde vértice hacia el centro
       const toCenterX = centerX - p.x;
       const toCenterY = centerY - p.y;
       const centerDist = Math.sqrt(toCenterX * toCenterX + toCenterY * toCenterY);
-      
+
       if (centerDist > 0) {
         // Offset hacia afuera (opuesto al centro)
         const offsetDist = (i === topVertexIndex) ? 10 : 8;
         const offsetX = -(toCenterX / centerDist) * offsetDist;
         const offsetY = -(toCenterY / centerDist) * offsetDist;
-        
+
         const label = (i === topVertexIndex) ? `${vertexAngles[i].toFixed(1)}° ▲` : `${vertexAngles[i].toFixed(1)}°`;
         doc.text(label, p.x + offsetX, p.y + offsetY, { align: 'center' });
       }
@@ -822,24 +794,23 @@ export class PDFReporter {
     // 13. Anotar ángulos diedros en el centro de cada arista (en verde)
     doc.setTextColor(0, 120, 0);
     doc.setFontSize(7);
-    
     for (let i = 0; i < finalPoints.length; i++) {
       if (dihedralAngles[i] > 0) {
         const p1 = finalPoints[i];
         const p2 = finalPoints[(i + 1) % finalPoints.length];
         const midX = (p1.x + p2.x) / 2;
         const midY = (p1.y + p2.y) / 2;
-        
+
         // Offset hacia el centro
         const toCenterX = centerX - midX;
         const toCenterY = centerY - midY;
         const centerDist = Math.sqrt(toCenterX * toCenterX + toCenterY * toCenterY);
-        
+
         if (centerDist > 0) {
           const offsetDist = 8;
           const offsetX = (toCenterX / centerDist) * offsetDist;
           const offsetY = (toCenterY / centerDist) * offsetDist;
-          
+
           // Usar texto simple en lugar del símbolo especial
           doc.setFont(undefined, 'bold');
           doc.text(`<${dihedralAngles[i].toFixed(1)}°`, midX + offsetX, midY + offsetY - 1.5, { align: 'center' });
