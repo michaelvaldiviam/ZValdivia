@@ -258,6 +258,13 @@ export class UIManager {
     if (this.cutLevelRange) this.cutLevelRange.value = visibleLevels;
   }
 
+  // ✅ NUEVO MÉTODO: Actualizar solo la altura visible
+  updateHeightDisplay() {
+    const nivelesVisibles = state.cutActive ? (state.N - state.cutLevel) : state.N;
+    const alturaVisible = state.h1 * nivelesVisibles;
+    if (this.infoH) this.infoH.textContent = alturaVisible.toFixed(2);
+  }
+
   updateState() {
     state.Dmax = Math.max(0.1, parseFloat(this.dmaxNum?.value) || 10);
     state.N = Math.max(3, parseInt(this.nNum?.value) || 11);
@@ -283,11 +290,9 @@ export class UIManager {
     // Actualizar display con niveles visibles
     this.updateCutLevelDisplay();
 
-    // ✅ CORRECCIÓN: Calcular altura visible basada en niveles visibles
-    const nivelesVisibles = state.cutActive ? (state.N - state.cutLevel) : state.N;
-    const alturaVisible = state.h1 * nivelesVisibles;
+    // ✅ Actualizar altura visible
+    this.updateHeightDisplay();
 
-    if (this.infoH) this.infoH.textContent = alturaVisible.toFixed(2);
     if (this.infoH1) this.infoH1.textContent = state.h1.toFixed(3);
     if (this.statusBadge) this.statusBadge.textContent = `N=${state.N} · α=${state.aDeg.toFixed(1)}°`;
 
@@ -436,6 +441,9 @@ export class UIManager {
     state.cutLevel = Math.max(1, Math.min(state.N - 1, state.cutLevel));
     
     if (state.cutActive) {
+      // ✅ Actualizar altura visible cuando cambia el nivel de corte
+      this.updateHeightDisplay();
+      
       this.sceneManager.requestRebuild();
       this.sceneManager.fitCamera();
       this.updateFacesCount();
@@ -510,6 +518,9 @@ export class UIManager {
       this.cutBtn.classList.toggle('active', state.cutActive);
       this.cutBtn.textContent = state.cutActive ? 'Desactivar porción' : 'Crear porción';
     }
+
+    // ✅ Actualizar altura visible cuando se activa/desactiva el corte
+    this.updateHeightDisplay();
 
     // Los controles están siempre visibles, solo activamos/desactivamos el corte
     this.sceneManager.requestRebuild();
