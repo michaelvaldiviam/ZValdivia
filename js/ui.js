@@ -9,6 +9,7 @@ export class UIManager {
     this.debounceTimer = null;
     this.throttleTimer = null;
     this.isUpdating = false;
+
     this.getDOMElements();
     this.setupEventListeners();
   }
@@ -21,7 +22,7 @@ export class UIManager {
     this.closeAdvancedBtn = document.getElementById('closeAdvancedBtn');
     this.toggleInfoBtn = document.getElementById('toggleInfoBtn');
     this.quickInfo = document.getElementById('quickInfo');
-    
+
     // Inputs - Main parameters
     this.dmaxNum = document.getElementById('dmaxNum');
     this.dmaxRange = document.getElementById('dmaxRange');
@@ -29,7 +30,7 @@ export class UIManager {
     this.nRange = document.getElementById('nRange');
     this.aNum = document.getElementById('aNum');
     this.aRange = document.getElementById('aRange');
-    
+
     // Buttons - Advanced panel
     this.facesBtn = document.getElementById('facesBtn');
     this.togglePolysBtn = document.getElementById('togglePolysBtn');
@@ -38,16 +39,16 @@ export class UIManager {
     this.colorByLevelBtn = document.getElementById('colorByLevelBtn');
     this.toggleAxisBtn = document.getElementById('toggleAxisBtn');
     this.rotationBtn = document.getElementById('rotationBtn');
-    
+
     // Cut plane control
     this.cutBtn = document.getElementById('cutBtn');
     this.cutControls = document.getElementById('cutControls');
     this.cutLevelNum = document.getElementById('cutLevelNum');
     this.cutLevelRange = document.getElementById('cutLevelRange');
-    
+
     // Rotation control
     this.rotationSpeed = document.getElementById('rotationSpeed');
-    
+
     // Info displays
     this.infoH = document.getElementById('infoH');
     this.infoH1 = document.getElementById('infoH1');
@@ -58,7 +59,7 @@ export class UIManager {
     this.infoRhombusSide = document.getElementById('infoRhombusSide');
     this.infoTriangleBase = document.getElementById('infoTriangleBase');
     this.triangleBaseInfo = document.getElementById('triangleBaseInfo');
-    
+
     // 🚀 PERFORMANCE: Agregar indicador de FPS
     this.createPerformanceIndicator();
   }
@@ -96,35 +97,29 @@ export class UIManager {
     // Colores según el tipo
     let borderColor = 'rgba(255, 165, 0, 0.5)'; // warning (naranja)
     let iconColor = '#f59e0b';
-    let icon = `
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="${iconColor}" stroke-width="2">
-        <circle cx="12" cy="12" r="10"></circle>
-        <line x1="12" y1="8" x2="12" y2="12"></line>
-        <line x1="12" y1="16" x2="12.01" y2="16"></line>
-      </svg>
-    `;
-    
+    let icon = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="${iconColor}" stroke-width="2">
+      <circle cx="12" cy="12" r="10"></circle>
+      <line x1="12" y1="8" x2="12" y2="12"></line>
+      <line x1="12" y1="16" x2="12.01" y2="16"></line>
+    </svg>`;
+
     if (type === 'success') {
       borderColor = 'rgba(34, 197, 94, 0.5)'; // verde
       iconColor = '#22c55e';
-      icon = `
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="${iconColor}" stroke-width="2">
-          <circle cx="12" cy="12" r="10"></circle>
-          <path d="M9 12l2 2 4-4"></path>
-        </svg>
-      `;
+      icon = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="${iconColor}" stroke-width="2">
+        <circle cx="12" cy="12" r="10"></circle>
+        <path d="M9 12l2 2 4-4"></path>
+      </svg>`;
     } else if (type === 'error') {
       borderColor = 'rgba(239, 68, 68, 0.5)'; // rojo
       iconColor = '#ef4444';
-      icon = `
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="${iconColor}" stroke-width="2">
-          <circle cx="12" cy="12" r="10"></circle>
-          <line x1="15" y1="9" x2="9" y2="15"></line>
-          <line x1="9" y1="9" x2="15" y2="15"></line>
-        </svg>
-      `;
+      icon = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="${iconColor}" stroke-width="2">
+        <circle cx="12" cy="12" r="10"></circle>
+        <line x1="15" y1="9" x2="9" y2="15"></line>
+        <line x1="9" y1="9" x2="15" y2="15"></line>
+      </svg>`;
     }
-    
+
     notification.style.cssText = `
       position: fixed;
       top: 50%;
@@ -143,14 +138,14 @@ export class UIManager {
       max-width: 90%;
       text-align: center;
     `;
-    
+
     notification.innerHTML = `
       <div style="display: flex; align-items: center; gap: 12px;">
         ${icon}
         <span>${message}</span>
       </div>
     `;
-    
+
     // Agregar animación CSS
     const style = document.createElement('style');
     style.textContent = `
@@ -166,9 +161,8 @@ export class UIManager {
       }
     `;
     document.head.appendChild(style);
-    
     document.body.appendChild(notification);
-    
+
     // Remover después de 2.5 segundos (más tiempo para info)
     const duration = type === 'info' ? 3000 : 2500;
     setTimeout(() => {
@@ -182,80 +176,60 @@ export class UIManager {
 
   setupEventListeners() {
     // Advanced panel controls
-    if (this.toggleAdvancedBtn) {
+    if (this.toggleAdvancedBtn) 
       this.toggleAdvancedBtn.addEventListener('click', () => this.openAdvancedPanel());
-    }
-    if (this.closeAdvancedBtn) {
+    if (this.closeAdvancedBtn) 
       this.closeAdvancedBtn.addEventListener('click', () => this.closeAdvancedPanel());
-    }
-    
+
     // Info panel toggle (solo móvil)
-    if (this.toggleInfoBtn) {
+    if (this.toggleInfoBtn)
       this.toggleInfoBtn.addEventListener('click', () => this.toggleInfo());
-    }
-    
+
     // Input controls - con debouncing y throttling
-    if (this.dmaxNum) {
+    if (this.dmaxNum) 
       this.dmaxNum.addEventListener('input', () => this.debouncedSyncInputs('num', 'dmax'));
-    }
-    if (this.dmaxRange) {
+    if (this.dmaxRange) 
       this.dmaxRange.addEventListener('input', () => this.throttledSyncInputs('range', 'dmax'));
-    }
-    
+
     // N es el más crítico - throttling más agresivo
-    if (this.nNum) {
+    if (this.nNum) 
       this.nNum.addEventListener('input', () => this.debouncedSyncInputs('num', 'n'));
-    }
-    if (this.nRange) {
+    if (this.nRange) 
       this.nRange.addEventListener('input', () => this.throttledSyncInputs('range', 'n'));
-    }
-    
-    if (this.aNum) {
+
+    if (this.aNum) 
       this.aNum.addEventListener('input', () => this.debouncedSyncInputs('num', 'a'));
-    }
-    if (this.aRange) {
+    if (this.aRange) 
       this.aRange.addEventListener('input', () => this.throttledSyncInputs('range', 'a'));
-    }
-    
+
     // Cut plane controls
-    if (this.cutLevelNum) {
+    if (this.cutLevelNum)
       this.cutLevelNum.addEventListener('input', () => this.debouncedSyncCutInputs('num'));
-    }
-    if (this.cutLevelRange) {
+    if (this.cutLevelRange)
       this.cutLevelRange.addEventListener('input', () => this.throttledSyncCutInputs('range'));
-    }
-    
+
     // Button controls
-    if (this.facesBtn) {
+    if (this.facesBtn) 
       this.facesBtn.addEventListener('click', () => this.toggleFaces());
-    }
-    if (this.togglePolysBtn) {
+    if (this.togglePolysBtn) 
       this.togglePolysBtn.addEventListener('click', () => this.togglePolygons());
-    }
-    if (this.toggleLinesBtn) {
+    if (this.toggleLinesBtn) 
       this.toggleLinesBtn.addEventListener('click', () => this.toggleLines());
-    }
-    if (this.fitBtn) {
+    if (this.fitBtn) 
       this.fitBtn.addEventListener('click', () => this.sceneManager.fitCamera());
-    }
-    if (this.colorByLevelBtn) {
+    if (this.colorByLevelBtn) 
       this.colorByLevelBtn.addEventListener('click', () => this.toggleColorByLevel());
-    }
-    if (this.toggleAxisBtn) {
+    if (this.toggleAxisBtn) 
       this.toggleAxisBtn.addEventListener('click', () => this.toggleAxis());
-    }
-    if (this.rotationBtn) {
+    if (this.rotationBtn) 
       this.rotationBtn.addEventListener('click', () => this.toggleRotation());
-    }
-    if (this.cutBtn) {
+    if (this.cutBtn) 
       this.cutBtn.addEventListener('click', () => this.toggleCut());
-    }
-    
+
     // Rotation speed control
-    if (this.rotationSpeed) {
+    if (this.rotationSpeed)
       this.rotationSpeed.addEventListener('input', (e) => this.updateRotationSpeed(e));
-    }
-    
+
     // Window resize
     window.addEventListener('resize', () => this.sceneManager.handleResize());
   }
@@ -288,9 +262,9 @@ export class UIManager {
     state.Dmax = Math.max(0.1, parseFloat(this.dmaxNum?.value) || 10);
     state.N = Math.max(3, parseInt(this.nNum?.value) || 11);
     state.aDeg = Math.min(89.9, Math.max(0.1, parseFloat(this.aNum?.value) || 39.8));
-    
+
     updateStateCalculations();
-    
+
     // Actualizar rango del plano de corte para niveles visibles
     const maxVisibleLevels = state.N - 1;
     if (this.cutLevelRange) {
@@ -301,29 +275,29 @@ export class UIManager {
       this.cutLevelNum.max = maxVisibleLevels;
       this.cutLevelNum.min = 1;
     }
-    
+
     // Asegurar que cutLevel esté dentro del rango válido
-    if (state.cutLevel > state.N - 1) {
-      state.cutLevel = state.N - 1;
-    }
-    if (state.cutLevel < 1) {
-      state.cutLevel = 1;
-    }
-    
+    if (state.cutLevel >= state.N - 1) state.cutLevel = state.N - 1;
+    if (state.cutLevel < 1) state.cutLevel = 1;
+
     // Actualizar display con niveles visibles
     this.updateCutLevelDisplay();
-    
-    if (this.infoH) this.infoH.textContent = state.Htotal.toFixed(2);
+
+    // ✅ CORRECCIÓN: Calcular altura visible basada en niveles visibles
+    const nivelesVisibles = state.cutActive ? (state.N - state.cutLevel) : state.N;
+    const alturaVisible = state.h1 * nivelesVisibles;
+
+    if (this.infoH) this.infoH.textContent = alturaVisible.toFixed(2);
     if (this.infoH1) this.infoH1.textContent = state.h1.toFixed(3);
-    if (this.statusBadge) this.statusBadge.textContent = `N:${state.N} a:${state.aDeg.toFixed(1)}°`;
-    
+    if (this.statusBadge) this.statusBadge.textContent = `N=${state.N} · α=${state.aDeg.toFixed(1)}°`;
+
     // Actualizar información geométrica
     this.updateGeometryInfo();
   }
 
   updateGeometryInfo() {
     const { N, Dmax, h1, cutActive, cutLevel, aRad } = state;
-    
+
     // Calcular diámetro del polígono en el piso de corte
     if (cutActive) {
       // Diámetro del polígono en el nivel de corte
@@ -336,7 +310,7 @@ export class UIManager {
       if (this.infoDiameter) this.infoDiameter.textContent = Dmax.toFixed(2);
       if (this.diameterLabel) this.diameterLabel.textContent = 'Dmax';
     }
-    
+
     // Calcular lado del rombo
     // El lado del rombo se calcula usando la distancia entre vértices adyacentes
     // Para un rombo en el nivel k, usamos k=1 como referencia
@@ -352,12 +326,11 @@ export class UIManager {
     const rhombusSide = Math.sqrt(chordLength * chordLength + h1 * h1);
     
     if (this.infoRhombusSide) this.infoRhombusSide.textContent = rhombusSide.toFixed(3);
-    
+
     // Calcular base del triángulo en el piso de corte (si está activo)
     if (cutActive) {
       const RkCut = (Dmax / 2) * Math.sin((cutLevel * Math.PI) / N);
       const triangleBase = 2 * RkCut * Math.sin(step / 2);
-      
       if (this.infoTriangleBase) this.infoTriangleBase.textContent = triangleBase.toFixed(3);
       if (this.triangleBaseInfo) this.triangleBaseInfo.style.display = 'flex';
     } else {
@@ -380,9 +353,7 @@ export class UIManager {
     this.syncInputValues(source);
     
     // Cancelar timer anterior
-    if (this.debounceTimer) {
-      clearTimeout(this.debounceTimer);
-    }
+    if (this.debounceTimer) clearTimeout(this.debounceTimer);
     
     // Esperar 200ms después del último cambio para reconstruir (aumentado para mejor performance)
     this.debounceTimer = setTimeout(() => {
@@ -396,9 +367,7 @@ export class UIManager {
     this.syncInputValues(source);
     
     // Si ya hay una actualización en curso, salir
-    if (this.isUpdating) {
-      return;
-    }
+    if (this.isUpdating) return;
     
     // Marcar como actualizando
     this.isUpdating = true;
@@ -432,11 +401,7 @@ export class UIManager {
 
   debouncedSyncCutInputs(source) {
     this.syncCutValues(source);
-    
-    if (this.debounceTimer) {
-      clearTimeout(this.debounceTimer);
-    }
-    
+    if (this.debounceTimer) clearTimeout(this.debounceTimer);
     this.debounceTimer = setTimeout(() => {
       this.performCutSync();
     }, 150);
@@ -444,13 +409,8 @@ export class UIManager {
 
   throttledSyncCutInputs(source) {
     this.syncCutValues(source);
-    
-    if (this.isUpdating) {
-      return;
-    }
-    
+    if (this.isUpdating) return;
     this.isUpdating = true;
-    
     setTimeout(() => {
       this.performCutSync();
       this.isUpdating = false;
@@ -459,19 +419,17 @@ export class UIManager {
 
   syncCutValues(source) {
     if (source === 'num') {
-      if (this.cutLevelRange && this.cutLevelNum) {
+      if (this.cutLevelRange && this.cutLevelNum) 
         this.cutLevelRange.value = this.cutLevelNum.value;
-      }
     } else {
-      if (this.cutLevelNum && this.cutLevelRange) {
+      if (this.cutLevelNum && this.cutLevelRange) 
         this.cutLevelNum.value = this.cutLevelRange.value;
-      }
     }
   }
 
   performCutSync() {
     // Convertir niveles visibles a cutLevel interno (K desde abajo)
-    const visibleLevels = parseInt(this.cutLevelNum?.value || 5);
+    const visibleLevels = parseInt(this.cutLevelNum?.value) || 5;
     state.cutLevel = state.N - visibleLevels;
     
     // Asegurar límites válidos
@@ -519,11 +477,11 @@ export class UIManager {
       this.showNotification('Debes activar las caras primero para cambiar el skin');
       return;
     }
-    
+
     state.colorByLevel = !state.colorByLevel;
     if (this.colorByLevelBtn) {
       this.colorByLevelBtn.classList.toggle('primary', !state.colorByLevel);
-      this.colorByLevelBtn.textContent = state.colorByLevel ? 'Skin: Arcoíris' : 'Skin: Cristal';
+      this.colorByLevelBtn.textContent = state.colorByLevel ? 'Skin Arcoíris' : 'Skin Cristal';
     }
     this.sceneManager.requestRebuild();
     this.updateFacesCount();
@@ -552,9 +510,8 @@ export class UIManager {
       this.cutBtn.classList.toggle('active', state.cutActive);
       this.cutBtn.textContent = state.cutActive ? 'Desactivar porción' : 'Crear porción';
     }
-    
+
     // Los controles están siempre visibles, solo activamos/desactivamos el corte
-    
     this.sceneManager.requestRebuild();
     this.sceneManager.fitCamera();
     this.updateFacesCount();
@@ -574,27 +531,28 @@ export class UIManager {
     if (window.innerWidth <= 640 && this.quickInfo) {
       this.quickInfo.classList.add('collapsed');
     }
-    
+
     this.updateState();
     this.updateGeometryInfo(); // Inicializar valores geométricos
     this.sceneManager.requestRebuild();
     this.sceneManager.fitCamera();
     this.updateFacesCount();
-    
-    // 🚀 Iniciar monitoreo de FPS
+
+    // Iniciar monitoreo de FPS
     this.startFPSMonitor();
   }
 
   startFPSMonitor() {
     let lastTime = performance.now();
     let frames = 0;
-    
+
     const updateFPS = () => {
       frames++;
       const currentTime = performance.now();
-      
-      if (currentTime >= lastTime + 1000) {
-        const fps = Math.round((frames * 1000) / (currentTime - lastTime));
+
+      if (currentTime - lastTime >= 1000) {
+        const fps = Math.round(frames * 1000 / (currentTime - lastTime));
+        
         if (this.fpsCounter) {
           // Color según rendimiento
           let color = '#4ade80'; // Verde
@@ -604,13 +562,14 @@ export class UIManager {
           this.fpsCounter.style.color = color;
           this.fpsCounter.textContent = `FPS: ${fps}`;
         }
+
         frames = 0;
         lastTime = currentTime;
       }
-      
+
       requestAnimationFrame(updateFPS);
     };
-    
+
     updateFPS();
   }
 }
