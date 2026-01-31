@@ -255,15 +255,19 @@ export class PDFReporter {
       1000
     );
 
+    // ✅ Calcular altura visible actual
+    const nivelesVisibles = state.cutActive ? (state.N - state.cutLevel) : state.N;
+    const alturaVisible = state.h1 * nivelesVisibles;
+
     // Posicionar cámara según la vista
     if (view === 'xz') {
-      // Vista lateral (desde el eje Y) - CORREGIDO: Y negativo para ver correctamente
-      orthoCamera.position.set(0, -state.Dmax * 3, state.Htotal / 2);
-      orthoCamera.lookAt(0, 0, state.Htotal / 2);
+      // Vista lateral (desde el eje Y)
+      orthoCamera.position.set(0, -state.Dmax * 3, alturaVisible / 2);
+      orthoCamera.lookAt(0, 0, alturaVisible / 2);
       orthoCamera.up.set(0, 0, 1);
     } else if (view === 'xy') {
       // Vista superior (desde el eje Z)
-      const viewHeight = state.cutActive ? state.cutLevel * state.h1 : state.Htotal;
+      const viewHeight = state.cutActive ? state.cutLevel * state.h1 : alturaVisible;
       orthoCamera.position.set(0, 0, viewHeight + state.Dmax * 2);
       orthoCamera.lookAt(0, 0, viewHeight);
       orthoCamera.up.set(0, 1, 0);
@@ -745,7 +749,6 @@ export class PDFReporter {
       const dx = p2.x - p1.x;
       const dy = p2.y - p1.y;
       const len = Math.sqrt(dx * dx + dy * dy);
-
       if (len > 0) {
         // Vector perpendicular (rotado 90° hacia afuera)
         const perpX = -dy / len;
@@ -758,7 +761,6 @@ export class PDFReporter {
 
         // Si apunta hacia el centro, invertir
         const direction = dotProduct > 0 ? -1 : 1;
-
         const offsetDist = 8;
         const textX = midX + perpX * offsetDist * direction;
         const textY = midY + perpY * offsetDist * direction;
@@ -779,13 +781,11 @@ export class PDFReporter {
       const toCenterX = centerX - p.x;
       const toCenterY = centerY - p.y;
       const centerDist = Math.sqrt(toCenterX * toCenterX + toCenterY * toCenterY);
-
       if (centerDist > 0) {
         // Offset hacia afuera (opuesto al centro)
         const offsetDist = (i === topVertexIndex) ? 10 : 8;
         const offsetX = -(toCenterX / centerDist) * offsetDist;
         const offsetY = -(toCenterY / centerDist) * offsetDist;
-
         const label = (i === topVertexIndex) ? `${vertexAngles[i].toFixed(1)}° ▲` : `${vertexAngles[i].toFixed(1)}°`;
         doc.text(label, p.x + offsetX, p.y + offsetY, { align: 'center' });
       }
@@ -805,7 +805,6 @@ export class PDFReporter {
         const toCenterX = centerX - midX;
         const toCenterY = centerY - midY;
         const centerDist = Math.sqrt(toCenterX * toCenterX + toCenterY * toCenterY);
-
         if (centerDist > 0) {
           const offsetDist = 8;
           const offsetX = (toCenterX / centerDist) * offsetDist;
