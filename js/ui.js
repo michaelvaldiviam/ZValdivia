@@ -309,7 +309,7 @@ export class UIManager {
       const Rk = (Dmax / 2) * Math.sin((cutLevel * Math.PI) / N);
       const diameterCut = 2 * Rk;
       if (this.infoDiameter) this.infoDiameter.textContent = diameterCut.toFixed(2);
-      if (this.diameterLabel) this.diameterLabel.textContent = 'D corte';
+      if (this.diameterLabel) this.diameterLabel.textContent = 'Diámetro piso';
     } else {
       // Mostrar Dmax cuando no hay corte
       if (this.infoDiameter) this.infoDiameter.textContent = Dmax.toFixed(2);
