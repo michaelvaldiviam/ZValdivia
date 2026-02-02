@@ -1,10 +1,8 @@
-import * as THREE from 'three';
 import { SceneManager } from './scene.js';
 import { UIManager } from './ui.js';
-import { GeometryBuilder } from './geometry.js';
-import { ExportManager } from './export.js';
-import { PDFReportGenerator } from './pdf-report.js'; 
-// ✅ NUEVO
+import { OBJExporter } from './export.js';
+import { PDFReporter } from './pdf-report.js';
+import { ShareManager } from './share.js';  // ✅ NUEVO
 import { state, rhombiData } from './state.js';
 
 /**
@@ -28,7 +26,7 @@ class App {
     // ✅ NUEVO: Inicializar ShareManager
     this.shareManager = new ShareManager(this.uiManager, this.sceneManager);
 
-    // ✅ NUEVO: Cargar configuración compartida desde URL (ANTES de inicializar)
+    // ✅ NUEVO: Cargar configuración compartida desde URL
     this.loadSharedConfig();
 
     // Configurar botones de exportación
@@ -45,12 +43,11 @@ class App {
     this.sceneManager.render();
   }
 
-  // ✅ NUEVO: Cargar configuración compartida desde URL
+  // ✅ NUEVO
   loadSharedConfig() {
     const loaded = this.shareManager.loadFromURL();
     if (loaded) {
-      console.log('✅ Configuración cargada desde URL compartida');
-      // Actualizar botones según configuración cargada después de un breve delay
+      console.log('✅ Configuración cargada desde URL');
       setTimeout(() => {
         if (this.uiManager.updateAllButtons) {
           this.uiManager.updateAllButtons();
@@ -63,16 +60,13 @@ class App {
     const exportObjBtn = document.getElementById('exportObjBtn');
     if (exportObjBtn) {
       exportObjBtn.addEventListener('click', () => {
-        // Verificar si las caras están activadas antes de exportar
         if (!state.rhombiVisible || rhombiData.length === 0) {
           this.uiManager.showNotification('Debes activar las caras primero para exportar el modelo');
           return;
         }
 
-        // Exportar el archivo
         OBJExporter.exportToOBJ();
 
-        // Mostrar mensaje de éxito
         const totalFaces = rhombiData.reduce((sum, level) => sum + level.rhombi.length, 0);
         this.uiManager.showNotification(`Archivo OBJ exportado exitosamente (${totalFaces} caras)`, 'success');
       });
@@ -83,27 +77,22 @@ class App {
     const exportPdfBtn = document.getElementById('exportPdfBtn');
     if (exportPdfBtn) {
       exportPdfBtn.addEventListener('click', async () => {
-        // Verificar si las caras están activadas
         if (!state.rhombiVisible || rhombiData.length === 0) {
           this.uiManager.showNotification('Debes activar las caras primero para generar el reporte');
           return;
         }
 
-        // Mostrar mensaje de generación
         this.uiManager.showNotification('Generando reporte PDF...', 'info');
 
-        // Pequeño delay para que se vea el mensaje
         await new Promise(resolve => setTimeout(resolve, 500));
 
         try {
-          // Generar PDF
           await PDFReporter.generateReport(
             this.sceneManager.scene,
             this.sceneManager.camera,
             this.sceneManager.renderer
           );
 
-          // Mostrar mensaje de éxito
           this.uiManager.showNotification('Reporte PDF generado exitosamente', 'success');
         } catch (error) {
           console.error('Error generando PDF:', error);
@@ -113,7 +102,7 @@ class App {
     }
   }
 
-  // ✅ NUEVO: Configurar botones de compartir
+  // ✅ NUEVO
   setupShareButtons() {
     const shareUrlBtn = document.getElementById('shareUrlBtn');
     if (shareUrlBtn) {
