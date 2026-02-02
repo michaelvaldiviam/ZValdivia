@@ -94,4 +94,4 @@ function hslToHex(h, s, l) {
   };
 
   return parseInt(`0x${toHex(r)}${toHex(g)}${toHex(b)}`);
-}
+} 
