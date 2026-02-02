@@ -13,7 +13,7 @@ export const state = {
   isRotating: false,
   rotationSpeed: 0.3,
   cutActive: true,
-  cutLevel: 7,
+  cutLevel: 4,
   floorDiameter: 0,
 };
 
