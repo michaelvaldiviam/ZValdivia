@@ -1,7 +1,7 @@
 import { SceneManager } from './scene.js';
 import { UIManager } from './ui.js';
-import { OBJExporter } from './export.js';  // ✅ Tu clase actual
-import { PDFReporter } from './pdf-report.js';  // ✅ Tu clase actual
+import { OBJExporter } from './export.js';
+import { PDFReporter } from './pdf-report.js';
 import { ShareManager } from './share.js';  // ✅ NUEVO
 import { state, rhombiData } from './state.js';
 
@@ -26,7 +26,7 @@ class App {
     // ✅ NUEVO: Inicializar ShareManager
     this.shareManager = new ShareManager(this.uiManager, this.sceneManager);
 
-    // ✅ NUEVO: Cargar configuración compartida desde URL (antes de inicializar)
+    // ✅ NUEVO: Cargar configuración compartida desde URL (ANTES de inicializar)
     this.loadSharedConfig();
 
     // Configurar botones de exportación
