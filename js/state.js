@@ -17,7 +17,6 @@ export const state = {
   rotationSpeed: 0.3,
   cutActive: true,
   cutLevel: 7,
-  floorDiameter: 0,
 };
 
 /**
@@ -46,13 +45,6 @@ export function updateStateCalculations() {
   state.aRad = (state.aDeg * Math.PI) / 180;
   state.h1 = (state.Dmax / 2) * Math.tan(state.aRad) * Math.sin(Math.PI / state.N);
   state.Htotal = state.h1 * state.N;
-  
-  if (state.cutActive && state.cutLevel > 0) {
-    const Rk = (state.Dmax / 2) * Math.sin((state.cutLevel * Math.PI) / state.N);
-    state.floorDiameter = 2 * Rk;
-  } else {
-    state.floorDiameter = 0;
-  }
 }
 
 /**
