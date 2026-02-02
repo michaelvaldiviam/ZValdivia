@@ -205,4 +205,4 @@ export class ShareManager {
     
     input.click();
   }
-}
+} 
