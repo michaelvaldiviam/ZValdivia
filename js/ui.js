@@ -634,6 +634,60 @@ export class UIManager {
     state.rotationSpeed = speedValue / 100;
   }
 
+    /**
+   * Actualiza todos los botones según el estado actual
+   */
+  updateAllButtons() {
+    // Actualizar inputs
+    if (this.dmaxNum) this.dmaxNum.value = state.Dmax.toFixed(2);
+    if (this.dmaxRange) this.dmaxRange.value = state.Dmax.toFixed(2);
+    if (this.nNum) this.nNum.value = state.N;
+    if (this.nRange) this.nRange.value = state.N;
+    if (this.aNum) this.aNum.value = state.aDeg.toFixed(1);
+    if (this.aRange) this.aRange.value = state.aDeg.toFixed(1);
+
+    // Faces
+    if (this.facesBtn) {
+      this.facesBtn.classList.toggle('primary', state.rhombiVisible);
+      this.facesBtn.textContent = state.rhombiVisible ? 'Caras activadas' : 'Caras desactivadas';
+    }
+
+    // Polygons
+    if (this.togglePolysBtn) {
+      this.togglePolysBtn.classList.toggle('primary', state.polysVisible);
+      this.togglePolysBtn.textContent = state.polysVisible ? 'Polígonos activados' : 'Polígonos desactivados';
+    }
+
+    // Lines
+    if (this.toggleLinesBtn) {
+      this.toggleLinesBtn.classList.toggle('primary', state.linesVisible);
+      this.toggleLinesBtn.textContent = state.linesVisible ? 'Aristas activadas' : 'Aristas desactivadas';
+    }
+
+    // Axis
+    if (this.toggleAxisBtn) {
+      this.toggleAxisBtn.classList.toggle('primary', state.axisVisible);
+      this.toggleAxisBtn.textContent = state.axisVisible ? 'Eje activado' : 'Eje desactivado';
+    }
+
+    // Color by level
+    if (this.colorByLevelBtn) {
+      this.colorByLevelBtn.classList.toggle('primary', !state.colorByLevel);
+      this.colorByLevelBtn.textContent = state.colorByLevel ? 'Skin: Arcoíris' : 'Skin: Cristal';
+    }
+
+    // Cut button
+    if (this.cutBtn) {
+      this.cutBtn.classList.toggle('active', state.cutActive);
+      this.cutBtn.textContent = state.cutActive ? 'Desactivar porción' : 'Crear porción';
+    }
+
+    // Toggle diameter controls
+    this.toggleDiameterControls();
+    this.updateCutLevelDisplay();
+    this.updateGeometryInfo();
+  }
+
   initialize() {
     // Cerrar panel avanzado al inicio
     this.closeAdvancedPanel();
