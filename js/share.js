@@ -12,7 +12,6 @@ export class ShareManager {
 
   /**
    * Genera URL con parámetros de configuración
-   * Compatible con GitHub Pages
    */
   generateShareURL() {
     const params = new URLSearchParams({
@@ -28,7 +27,6 @@ export class ShareManager {
       axis: state.axisVisible ? '1' : '0'
     });
 
-    // GitHub Pages URL
     const baseURL = window.location.origin + window.location.pathname;
     return `${baseURL}?${params.toString()}`;
   }
@@ -39,34 +37,30 @@ export class ShareManager {
   loadFromURL() {
     const params = new URLSearchParams(window.location.search);
     
-    if (params.size === 0) return false; // No hay parámetros
+    if (params.size === 0) return false;
 
-    // Cargar parámetros básicos
     if (params.has('N')) state.N = Math.max(3, Math.min(100, parseInt(params.get('N'))));
     if (params.has('a')) state.aDeg = Math.max(0.1, Math.min(89.9, parseFloat(params.get('a'))));
     if (params.has('Dmax')) state.Dmax = Math.max(0.1, parseFloat(params.get('Dmax')));
     
-    // Plano de corte
     if (params.has('cut')) state.cutActive = params.get('cut') === '1';
     if (params.has('cutLevel')) state.cutLevel = parseInt(params.get('cutLevel'));
     
-    // Visualización
     if (params.has('faces')) state.rhombiVisible = params.get('faces') === '1';
     if (params.has('polys')) state.polysVisible = params.get('polys') === '1';
     if (params.has('lines')) state.linesVisible = params.get('lines') === '1';
     if (params.has('axis')) state.axisVisible = params.get('axis') === '1';
     
-    // Skin
     if (params.has('skin')) {
       state.colorByLevel = params.get('skin') === 'rainbow';
     }
 
     updateStateCalculations();
-    return true; // Se cargó configuración
+    return true;
   }
 
   /**
-   * Copia URL al portapapeles y muestra notificación
+   * Copia URL al portapapeles
    */
   async copyShareURL() {
     const url = this.generateShareURL();
@@ -76,14 +70,13 @@ export class ShareManager {
       this.uiManager.showNotification('¡Enlace copiado! Compártelo para que otros vean tu diseño', 'success');
       return true;
     } catch (err) {
-      // Fallback para navegadores sin clipboard API
       this.showFallbackCopy(url);
       return false;
     }
   }
 
   /**
-   * Fallback para copiar URL (navegadores antiguos)
+   * Fallback para copiar URL
    */
   showFallbackCopy(url) {
     const textarea = document.createElement('textarea');
@@ -126,11 +119,6 @@ export class ShareManager {
         linesVisible: state.linesVisible,
         axisVisible: state.axisVisible,
         colorByLevel: state.colorByLevel
-      },
-      computed: {
-        h1: state.h1,
-        Htotal: state.Htotal,
-        floorDiameter: state.floorDiameter
       }
     };
 
@@ -164,21 +152,17 @@ export class ShareManager {
         try {
           const config = JSON.parse(event.target.result);
           
-          // Validar versión
           if (!config.version || !config.parameters) {
             throw new Error('Archivo JSON inválido');
           }
 
-          // Cargar parámetros con validación
           state.N = Math.max(3, Math.min(100, config.parameters.N));
           state.aDeg = Math.max(0.1, Math.min(89.9, config.parameters.aDeg));
           state.Dmax = Math.max(0.1, config.parameters.Dmax);
           
-          // Cargar corte
           state.cutActive = config.cut.active;
           state.cutLevel = Math.max(1, Math.min(state.N - 1, config.cut.level));
           
-          // Cargar visualización
           state.rhombiVisible = config.visualization.rhombiVisible;
           state.polysVisible = config.visualization.polysVisible;
           state.linesVisible = config.visualization.linesVisible;
@@ -187,16 +171,17 @@ export class ShareManager {
 
           updateStateCalculations();
           
-          // Actualizar UI y escena
           this.uiManager.updateState();
-          this.uiManager.updateAllButtons();
+          if (this.uiManager.updateAllButtons) {
+            this.uiManager.updateAllButtons();
+          }
           this.sceneManager.requestRebuild();
           this.sceneManager.fitCamera();
           this.uiManager.updateFacesCount();
           
           this.uiManager.showNotification('Configuración cargada exitosamente', 'success');
         } catch (err) {
-          this.uiManager.showNotification('Error al cargar configuración: ' + err.message, 'error');
+          this.uiManager.showNotification('Error: ' + err.message, 'error');
         }
       };
       
@@ -205,4 +190,4 @@ export class ShareManager {
     
     input.click();
   }
-} 
+}
