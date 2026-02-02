@@ -698,6 +698,7 @@ export class UIManager {
     }
 
     this.updateState();
+    this.updateAllButtons();
     this.updateGeometryInfo(); // Inicializar valores geométricos
     this.sceneManager.requestRebuild();
     this.sceneManager.fitCamera();
