@@ -8,8 +8,8 @@ export const state = {
   aRad: 0,
   h1: 0,
   Htotal: 0,
-  rhombiVisible: true,
-  polysVisible: false,
+  rhombiVisible: false,
+  polysVisible: true,
   linesVisible: true,
   colorByLevel: true, // ✨ CAMBIO: Ahora inicia con Arcoíris (true = colores por nivel)
   axisVisible: true,
