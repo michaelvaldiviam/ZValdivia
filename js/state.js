@@ -17,6 +17,7 @@ export const state = {
   rotationSpeed: 0.3,
   cutActive: false,
   cutLevel: 5,
+  floorDiameter: 0, // ✅ NUEVO: Diámetro del piso de corte
 };
 
 /**
@@ -45,6 +46,14 @@ export function updateStateCalculations() {
   state.aRad = (state.aDeg * Math.PI) / 180;
   state.h1 = (state.Dmax / 2) * Math.tan(state.aRad) * Math.sin(Math.PI / state.N);
   state.Htotal = state.h1 * state.N;
+  
+  // ✅ NUEVO: Calcular diámetro del piso de corte
+  if (state.cutActive && state.cutLevel > 0) {
+    const Rk = (state.Dmax / 2) * Math.sin((state.cutLevel * Math.PI) / state.N);
+    state.floorDiameter = 2 * Rk;
+  } else {
+    state.floorDiameter = 0;
+  }
 }
 
 /**
@@ -68,13 +77,12 @@ export function getColorForLevel(level, totalLevels) {
 function hslToHex(h, s, l) {
   s /= 100;
   l /= 100;
-  
+
   const c = (1 - Math.abs(2 * l - 1)) * s;
   const x = c * (1 - Math.abs((h / 60) % 2 - 1));
   const m = l - c / 2;
-  
   let r = 0, g = 0, b = 0;
-  
+
   if (0 <= h && h < 60) {
     r = c; g = x; b = 0;
   } else if (60 <= h && h < 120) {
@@ -88,11 +96,11 @@ function hslToHex(h, s, l) {
   } else if (300 <= h && h < 360) {
     r = c; g = 0; b = x;
   }
-  
+
   const toHex = (val) => {
     const hex = Math.round((val + m) * 255).toString(16);
     return hex.length === 1 ? '0' + hex : hex;
   };
-  
+
   return parseInt(`0x${toHex(r)}${toHex(g)}${toHex(b)}`);
 }
