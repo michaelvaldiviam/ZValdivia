@@ -1,5 +1,5 @@
 /**
- * Estado global de la aplicación
+ * Estado global de la aplicacion
  */
 export const state = {
   Dmax: 10,
@@ -20,7 +20,7 @@ export const state = {
 };
 
 /**
- * Almacena la geometría de cada rombo con su identidad
+ * Almacena la geometria de cada rombo con su identidad
  */
 export let rhombiData = [];
 
@@ -48,7 +48,7 @@ export function updateStateCalculations() {
 }
 
 /**
- * Genera un color único basado en el nivel
+ * Genera un color unico basado en el nivel
  * @param {number} level - Nivel del rombo (1 a N-1)
  * @param {number} totalLevels - Total de niveles (N-1)
  * @returns {number} - Color en formato hexadecimal
