@@ -1,8 +1,10 @@
+import * as THREE from 'three';
 import { SceneManager } from './scene.js';
 import { UIManager } from './ui.js';
-import { OBJExporter } from './export.js';
-import { PDFReporter } from './pdf-report.js';
-import { ShareManager } from './share.js';  // ✅ NUEVO
+import { GeometryBuilder } from './geometry.js';
+import { ExportManager } from './export.js';
+import { PDFReportGenerator } from './pdf-report.js'; 
+// ✅ NUEVO
 import { state, rhombiData } from './state.js';
 
 /**
