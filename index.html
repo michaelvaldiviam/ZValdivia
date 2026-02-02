@@ -3,146 +3,174 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Zome Valdivia</title>
-    <link rel="stylesheet" href="styles.css">
+    <title>Zonohedro Polar - ZValdivia</title>
+    
+    <link rel="stylesheet" href="css/styles.css">
+
+    <!-- jsPDF para generación de reportes PDF -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
+
+    <script type="module" src="js/main.js"></script>
 </head>
 <body>
-    <!-- Canvas 3D -->
-    <div id="canvas-container"></div>
+  <canvas id="c"></canvas>
 
-    <!-- Quick Info (visible siempre) -->
-    <div id="quickInfo" class="quick-info">
-        <button id="toggleInfoBtn" class="toggle-info-btn">📊</button>
-        <div class="info-content">
-            <div class="info-item">
-                <span class="info-label">H visible:</span>
-                <span id="infoH" class="info-value">0.00</span>
-            </div>
-            <div class="info-item">
-                <span class="info-label">h₁:</span>
-                <span id="infoH1" class="info-value">0.000</span>
-            </div>
-            <div class="info-item">
-                <span class="info-label">Caras:</span>
-                <span id="infoFaces" class="info-value">0</span>
-            </div>
+  <div class="main-controls" id="mainControls">
+    <div class="card compact-card">
+      <div class="header-compact">
+        <div class="title-compact">
+          <h1>ZValdivia</h1>
+          <span class="status" id="statusBadge">N:11 a:39.8°</span>
         </div>
-    </div>
+        <div class="header-buttons">
+          <button class="icon-btn" id="toggleInfoBtn" title="Mostrar/Ocultar Info">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="8" cy="8" r="6"/>
+              <line x1="8" y1="6" x2="8" y2="8"/>
+              <line x1="8" y1="10" x2="8.01" y2="10"/>
+            </svg>
+          </button>
+          <button class="icon-btn" id="toggleAdvancedBtn" title="Opciones avanzadas">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="8" cy="8" r="3"/>
+              <line x1="8" y1="1" x2="8" y2="4"/>
+              <line x1="8" y1="12" x2="8" y2="15"/>
+              <line x1="1" y1="8" x2="4" y2="8"/>
+              <line x1="12" y1="8" x2="15" y2="8"/>
+            </svg>
+          </button>
+        </div>
+      </div>
 
-    <!-- Main Controls -->
-    <div id="mainControls" class="control-panel">
-        <div class="panel-header">
-            <span id="statusBadge" class="status-badge">N=11 · α=39.8°</span>
+      <div class="main-params">
+        <div class="param-group-inline">
+          <label>N (Lados)</label>
+          <input type="number" class="param-input-inline" id="nNum" value="11" min="3" max="100" step="1">
+          <input type="range" class="param-slider-inline" id="nRange" value="11" min="3" max="100" step="1">
         </div>
 
+        <div class="param-group-inline">
+          <label>α (Ángulo)</label>
+          <input type="number" class="param-input-inline" id="aNum" value="39.8" min="0.1" max="89.9" step="0.1">
+          <input type="range" class="param-slider-inline" id="aRange" value="39.8" min="0.1" max="89.9" step="0.1">
+        </div>
+
+        <!-- ✅ MODIFICADO: Agregado id="dmaxControl" -->
         <div class="param-group-inline" id="dmaxControl">
-            <label>Dmax (ecuador)</label>
-            <input type="number" class="param-input-inline" id="dmaxNum" value="10" min="0.1" max="50" step="0.1">
-            <input type="range" class="param-slider-inline" id="dmaxRange" value="10" min="0.1" max="50" step="0.1">
+          <label>Dmax (ecuador)</label>
+          <input type="number" class="param-input-inline" id="dmaxNum" value="10" min="0.1" max="50" step="0.1">
+          <input type="range" class="param-slider-inline" id="dmaxRange" value="10" min="0.1" max="50" step="0.1">
         </div>
 
-        <!-- ✅ NUEVO CONTROL: Diámetro del piso -->
+        <!-- ✅ NUEVO: Control de diámetro del piso -->
         <div class="param-group-inline" id="floorDiameterControl" style="display: none;">
-            <label>Ø del piso</label>
-            <input type="number" class="param-input-inline" id="floorDiameterNum" value="5" min="0.1" max="50" step="0.1">
-            <input type="range" class="param-slider-inline" id="floorDiameterRange" value="5" min="0.1" max="50" step="0.1">
+          <label>Ø del piso</label>
+          <input type="number" class="param-input-inline" id="floorDiameterNum" value="5" min="0.1" max="50" step="0.1">
+          <input type="range" class="param-slider-inline" id="floorDiameterRange" value="5" min="0.1" max="50" step="0.1">
         </div>
 
-        <div class="param-group-inline">
-            <label>N (lados)</label>
-            <input type="number" class="param-input-inline" id="nNum" value="11" min="3" max="20" step="1">
-            <input type="range" class="param-slider-inline" id="nRange" value="11" min="3" max="20" step="1">
-        </div>
-
-        <div class="param-group-inline">
-            <label>α (ángulo)</label>
-            <input type="number" class="param-input-inline" id="aNum" value="39.8" min="0.1" max="89.9" step="0.1">
-            <input type="range" class="param-slider-inline" id="aRange" value="39.8" min="0.1" max="89.9" step="0.1">
-        </div>
-
-        <!-- Botón para abrir panel avanzado -->
-        <button id="toggleAdvancedBtn" class="btn btn-secondary">⚙️ Controles avanzados</button>
-    </div>
-
-    <!-- Advanced Panel (Overlay Modal) -->
-    <div id="advancedPanel" class="advanced-panel">
-        <div class="advanced-content">
-            <div class="advanced-header">
-                <h3>Controles Avanzados</h3>
-                <button id="closeAdvancedBtn" class="close-btn">✕</button>
+        <div class="cut-group-inline">
+          <div class="cut-header-inline">
+            <!-- Controles ANTES del botón -->
+            <div class="cut-level-control">
+              <label>Niveles visibles</label>
+              <input type="number" class="cut-level-input" id="cutLevelNum" value="5" min="1" max="10">
+              <input type="range" class="cut-level-slider" id="cutLevelRange" value="5" min="1" max="10">
             </div>
-
-            <div class="advanced-body">
-                <!-- Visualización -->
-                <div class="control-section">
-                    <h4>Visualización</h4>
-                    <div class="button-grid">
-                        <button id="facesBtn" class="btn">Caras</button>
-                        <button id="togglePolysBtn" class="btn primary">Polígonos</button>
-                        <button id="toggleLinesBtn" class="btn primary">Aristas</button>
-                        <button id="toggleAxisBtn" class="btn primary">Eje</button>
-                    </div>
-                </div>
-
-                <!-- Skin -->
-                <div class="control-section">
-                    <h4>Skin</h4>
-                    <button id="colorByLevelBtn" class="btn">Skin Cristal</button>
-                </div>
-
-                <!-- Plano de corte -->
-                <div class="control-section">
-                    <h4>Plano de corte</h4>
-                    <button id="cutBtn" class="btn">Crear porción</button>
-                    <div id="cutControls" class="cut-controls">
-                        <label>Niveles visibles</label>
-                        <input type="number" class="param-input-inline" id="cutLevelNum" value="5" min="1" max="10" step="1">
-                        <input type="range" class="param-slider-inline" id="cutLevelRange" value="5" min="1" max="10" step="1">
-                    </div>
-                </div>
-
-                <!-- Rotación -->
-                <div class="control-section">
-                    <h4>Rotación</h4>
-                    <button id="rotationBtn" class="btn">Rotar</button>
-                    <div class="rotation-controls">
-                        <label>Velocidad</label>
-                        <input type="range" id="rotationSpeed" min="0" max="100" value="30" step="1">
-                    </div>
-                </div>
-
-                <!-- Cámara -->
-                <div class="control-section">
-                    <h4>Cámara</h4>
-                    <button id="fitBtn" class="btn">Ajustar vista</button>
-                </div>
-
-                <!-- Información Geométrica -->
-                <div class="control-section">
-                    <h4>Info Geométrica</h4>
-                    <div class="geometry-info">
-                        <div class="info-row">
-                            <span id="diameterLabel">Dmax</span>
-                            <span id="infoDiameter">10.00</span>
-                        </div>
-                        <div class="info-row">
-                            <span>Lado rombo</span>
-                            <span id="infoRhombusSide">0.000</span>
-                        </div>
-                        <div class="info-row" id="triangleBaseInfo" style="display: none;">
-                            <span>Base triángulo</span>
-                            <span id="infoTriangleBase">0.000</span>
-                        </div>
-                    </div>
-                </div>
-            </div>
+            <!-- Botón de activar/desactivar -->
+            <button class="btn-cut-inline" id="cutBtn">Crear porción</button>
+          </div>
         </div>
-    </div>
+      </div>
 
-    <!-- Scripts -->
-    <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/js/controls/OrbitControls.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-    <script type="module" src="main.js"></script>
+      <div class="quick-info" id="quickInfo">
+        <div class="info-item">
+          <span>Altura Total</span>
+          <span class="mono" id="infoH">0.00</span>
+        </div>
+        <div class="info-item">
+          <span>h₁</span>
+          <span class="mono" id="infoH1">0.000</span>
+        </div>
+        <div class="info-item">
+          <span>Caras</span>
+          <span class="mono" id="infoFaces">0</span>
+        </div>
+        <div class="info-item">
+          <span id="diameterLabel">Dmax</span>
+          <span class="mono" id="infoDiameter">0.00</span>
+        </div>
+        <div class="info-item">
+          <span>Lado rombo</span>
+          <span class="mono" id="infoRhombusSide">0.000</span>
+        </div>
+        <div class="info-item" id="triangleBaseInfo" style="display: none;">
+          <span>Base triángulo</span>
+          <span class="mono" id="infoTriangleBase">0.000</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="advanced-panel" id="advancedPanel">
+    <div class="card">
+      <div class="header">
+        <div class="title">
+          <h2>Opciones Avanzadas</h2>
+        </div>
+        <button class="icon-btn" id="closeAdvancedBtn">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="1" y1="1" x2="13" y2="13"/>
+            <line x1="13" y1="1" x2="1" y2="13"/>
+          </svg>
+        </button>
+      </div>
+
+      <div class="advanced-controls">
+        <div class="control-section">
+          <h3 class="section-title">Visualización</h3>
+          <div class="btn-grid-2col">
+            <button class="btn" id="facesBtn">Caras desactivadas</button>
+            <button class="btn primary" id="colorByLevelBtn">Skin: Arcoíris</button>
+            <button class="btn primary" id="togglePolysBtn">Polígonos activados</button>
+            <button class="btn primary" id="toggleLinesBtn">Aristas activadas</button>
+            <button class="btn primary" id="toggleAxisBtn">Eje activado</button>
+            <button class="btn" id="fitBtn">Ajustar cámara</button>
+          </div>
+        </div>
+
+        <div class="control-section">
+          <h3 class="section-title">Rotación Automática</h3>
+          <div class="rotation-control">
+            <button class="btn btn-rotation" id="rotationBtn">▶ Rotar</button>
+            <div class="rotation-speed-control">
+              <label class="small-label">Velocidad</label>
+              <input type="range" class="rotation-slider" id="rotationSpeed" value="30" min="1" max="100" step="1">
+            </div>
+          </div>
+        </div>
+
+        <div class="control-section">
+          <h3 class="section-title">Exportar</h3>
+          <button class="btn btn-full primary" id="exportObjBtn">
+            Descargar OBJ
+          </button>
+          <button class="btn btn-full" id="exportPdfBtn">
+            Generar Reporte PDF
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
 </body>
 </html>
