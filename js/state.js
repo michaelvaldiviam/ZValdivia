@@ -8,16 +8,15 @@ export const state = {
   aRad: 0,
   h1: 0,
   Htotal: 0,
-  rhombiVisible: false,
-  polysVisible: true,
-  linesVisible: true,
-  colorByLevel: true, // ✨ CAMBIO: Ahora inicia con Arcoíris (true = colores por nivel)
-  axisVisible: true,
+  rhombiVisible: true,      // ✅ ACTIVADO: Caras visibles por defecto
+  polysVisible: false,      // ✅ DESACTIVADO: Polígonos ocultos por defecto
+  linesVisible: true,       // ✅ Aristas visibles
+  colorByLevel: true,       // ✅ Skin Arcoíris por defecto
+  axisVisible: false,       // ✅ DESACTIVADO: Eje oculto por defecto
   isRotating: false,
   rotationSpeed: 0.3,
-  cutActive: false,
-  cutLevel: 5,
-  floorDiameter: 0, // ✅ NUEVO: Diámetro del piso de corte
+  cutActive: true,          // ✅ ACTIVADO: Corte activo por defecto
+  cutLevel: 7,              // ✅ CAMBIADO: Nivel 7 por defecto (antes era 5)
 };
 
 /**
@@ -46,14 +45,6 @@ export function updateStateCalculations() {
   state.aRad = (state.aDeg * Math.PI) / 180;
   state.h1 = (state.Dmax / 2) * Math.tan(state.aRad) * Math.sin(Math.PI / state.N);
   state.Htotal = state.h1 * state.N;
-  
-  // ✅ NUEVO: Calcular diámetro del piso de corte
-  if (state.cutActive && state.cutLevel > 0) {
-    const Rk = (state.Dmax / 2) * Math.sin((state.cutLevel * Math.PI) / state.N);
-    state.floorDiameter = 2 * Rk;
-  } else {
-    state.floorDiameter = 0;
-  }
 }
 
 /**
