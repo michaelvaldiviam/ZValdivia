@@ -8,15 +8,15 @@ export const state = {
   aRad: 0,
   h1: 0,
   Htotal: 0,
-  rhombiVisible: true,      // ✅ ACTIVADO: Caras visibles por defecto
-  polysVisible: false,      // ✅ DESACTIVADO: Polígonos ocultos por defecto
-  linesVisible: true,       // ✅ Aristas visibles
-  colorByLevel: true,       // ✅ Skin Arcoíris por defecto
-  axisVisible: false,       // ✅ DESACTIVADO: Eje oculto por defecto
+  rhombiVisible: true,
+  polysVisible: false,
+  linesVisible: true,
+  colorByLevel: true,
+  axisVisible: false,
   isRotating: false,
   rotationSpeed: 0.3,
-  cutActive: true,          // ✅ ACTIVADO: Corte activo por defecto
-  cutLevel: 7,              // ✅ CAMBIADO: Nivel 7 por defecto (antes era 5)
+  cutActive: true,
+  cutLevel: 7,
 };
 
 /**
@@ -94,4 +94,4 @@ function hslToHex(h, s, l) {
   };
 
   return parseInt(`0x${toHex(r)}${toHex(g)}${toHex(b)}`);
-} 
+}
