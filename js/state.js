@@ -1,6 +1,3 @@
-/**
- * Estado global de la aplicacion
- */
 export const state = {
   Dmax: 10,
   N: 11,
@@ -17,54 +14,37 @@ export const state = {
   rotationSpeed: 0.3,
   cutActive: true,
   cutLevel: 7,
+  floorDiameter: 0,
 };
 
-/**
- * Almacena la geometria de cada rombo con su identidad
- */
 export let rhombiData = [];
 
-/**
- * Actualiza el array de datos de rombos
- */
 export function setRhombiData(data) {
   rhombiData = data;
 }
 
-/**
- * Limpia el array de datos de rombos
- */
 export function clearRhombiData() {
   rhombiData = [];
 }
 
-/**
- * Actualiza los valores calculados del estado
- */
 export function updateStateCalculations() {
   state.aRad = (state.aDeg * Math.PI) / 180;
   state.h1 = (state.Dmax / 2) * Math.tan(state.aRad) * Math.sin(Math.PI / state.N);
   state.Htotal = state.h1 * state.N;
+  
+  if (state.cutActive && state.cutLevel > 0) {
+    const Rk = (state.Dmax / 2) * Math.sin((state.cutLevel * Math.PI) / state.N);
+    state.floorDiameter = 2 * Rk;
+  } else {
+    state.floorDiameter = 0;
+  }
 }
 
-/**
- * Genera un color unico basado en el nivel
- * @param {number} level - Nivel del rombo (1 a N-1)
- * @param {number} totalLevels - Total de niveles (N-1)
- * @returns {number} - Color en formato hexadecimal
- */
 export function getColorForLevel(level, totalLevels) {
   const hue = ((level - 1) / totalLevels) * 360;
   return hslToHex(hue, 70, 60);
 }
 
-/**
- * Convierte HSL a hexadecimal
- * @param {number} h - Hue (0-360)
- * @param {number} s - Saturation (0-100)
- * @param {number} l - Lightness (0-100)
- * @returns {number} - Color en formato hexadecimal
- */
 function hslToHex(h, s, l) {
   s /= 100;
   l /= 100;
