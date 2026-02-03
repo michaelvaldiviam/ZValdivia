@@ -543,7 +543,6 @@ export class UIManager {
       }
       
       this.sceneManager.requestRebuild();
-      this.sceneManager.fitCamera();
       this.updateFacesCount();
       this.updateGeometryInfo();
     }
@@ -624,7 +623,6 @@ export class UIManager {
     this.toggleDiameterControls();
 
     this.sceneManager.requestRebuild();
-    this.sceneManager.fitCamera();
     this.updateFacesCount();
     this.updateGeometryInfo();
   }
