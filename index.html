@@ -2,8 +2,8 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Zonohedro Polar - ZValdivia</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>ZValdivia 3D - Zonohedro Polar</title>
     
     <link rel="stylesheet" href="css/styles.css">
 
@@ -18,173 +18,344 @@
         }
     }
     </script>
-
-    <script type="module" src="js/main.js"></script>
 </head>
-<body>
+<body class="dark-mode">
+  <!-- Pantalla de carga -->
+  <div id="loadingScreen" class="loading-screen">
+    <div class="loading-content">
+      <div class="loading-logo">
+        <svg viewBox="0 0 100 100" class="logo-icon">
+          <defs>
+            <linearGradient id="logoGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" style="stop-color:#3b82f6;stop-opacity:1" />
+              <stop offset="100%" style="stop-color:#8b5cf6;stop-opacity:1" />
+            </linearGradient>
+          </defs>
+          <polygon points="50,10 90,30 90,70 50,90 10,70 10,30" fill="none" stroke="url(#logoGradient)" stroke-width="3"/>
+          <polygon points="50,25 75,37.5 75,62.5 50,75 25,62.5 25,37.5" fill="none" stroke="url(#logoGradient)" stroke-width="2" opacity="0.6"/>
+          <circle cx="50" cy="50" r="8" fill="url(#logoGradient)"/>
+        </svg>
+      </div>
+      <h1 class="loading-title">ZValdivia 3D</h1>
+      <div class="loading-bar">
+        <div class="loading-progress"></div>
+      </div>
+      <p class="loading-text">Inicializando geometría polar...</p>
+    </div>
+  </div>
+
+  <!-- Canvas 3D -->
   <canvas id="c"></canvas>
 
+  <!-- Branding discreto -->
+  <div class="app-branding">
+    <span class="brand-name">ZValdivia</span>
+    <span class="brand-version">3D</span>
+  </div>
+
+  <!-- Panel de control principal -->
   <div class="main-controls" id="mainControls">
-    <div class="card compact-card">
-      <div class="header-compact">
-        <div class="title-compact">
-          <h1>ZValdivia</h1>
-          <span class="status" id="statusBadge">N:11 a:39.8°</span>
-        </div>
-        <div class="header-buttons">
-          <button class="icon-btn" id="toggleInfoBtn" title="Mostrar/Ocultar Info">
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="8" cy="8" r="6"/>
-              <line x1="8" y1="6" x2="8" y2="8"/>
-              <line x1="8" y1="10" x2="8.01" y2="10"/>
-            </svg>
-          </button>
-          <button class="icon-btn" id="toggleAdvancedBtn" title="Opciones avanzadas">
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="8" cy="8" r="3"/>
-              <line x1="8" y1="1" x2="8" y2="4"/>
-              <line x1="8" y1="12" x2="8" y2="15"/>
-              <line x1="1" y1="8" x2="4" y2="8"/>
-              <line x1="12" y1="8" x2="15" y2="8"/>
-            </svg>
-          </button>
-        </div>
-      </div>
-
-      <div class="main-params">
-        <div class="param-group-inline">
-          <label>N (Lados)</label>
-          <input type="number" class="param-input-inline" id="nNum" value="11" min="3" max="100" step="1">
-          <input type="range" class="param-slider-inline" id="nRange" value="11" min="3" max="100" step="1">
-        </div>
-
-        <div class="param-group-inline">
-          <label>α (Ángulo)</label>
-          <input type="number" class="param-input-inline" id="aNum" value="39.8" min="0.1" max="89.9" step="0.1">
-          <input type="range" class="param-slider-inline" id="aRange" value="39.8" min="0.1" max="89.9" step="0.1">
-        </div>
-
-        <!-- ✅ MODIFICADO: Agregado id="dmaxControl" -->
-        <div class="param-group-inline" id="dmaxControl">
-          <label>Dmax (ecuador, m)</label>
-          <input type="number" class="param-input-inline" id="dmaxNum" value="10" min="0.1" max="50" step="0.1">
-          <input type="range" class="param-slider-inline" id="dmaxRange" value="10" min="0.1" max="50" step="0.1">
-        </div>
-
-        <!-- ✅ NUEVO: Control de diámetro del piso -->
-        <div class="param-group-inline" id="floorDiameterControl" style="display: none;">
-          <label>Ø del piso (m)</label>
-          <input type="number" class="param-input-inline" id="floorDiameterNum" value="5" min="0.1" max="50" step="0.1">
-          <input type="range" class="param-slider-inline" id="floorDiameterRange" value="5" min="0.1" max="50" step="0.1">
-        </div>
-
-        <div class="cut-group-inline">
-          <div class="cut-header-inline">
-            <!-- Controles ANTES del botón -->
-            <div class="cut-level-control">
-              <label>Niveles visibles</label>
-              <input type="number" class="cut-level-input" id="cutLevelNum" value="5" min="1" max="10">
-              <input type="range" class="cut-level-slider" id="cutLevelRange" value="5" min="1" max="10">
-            </div>
-            <!-- Botón de activar/desactivar -->
-            <button class="btn-cut-inline" id="cutBtn">Crear porción</button>
+    <div class="control-card">
+      <!-- Header con configuración básica -->
+      <div class="card-header">
+        <div class="header-info">
+          <div class="config-badge">
+            <span class="badge-label">N:</span>
+            <span class="badge-value" id="badgeN">11</span>
+          </div>
+          <div class="config-badge">
+            <span class="badge-label">α:</span>
+            <span class="badge-value" id="badgeAngle">39.8°</span>
+          </div>
+          <div class="config-badge">
+            <span class="badge-label">Ø:</span>
+            <span class="badge-value" id="badgeDiameter">10m</span>
+          </div>
+          <div class="config-badge" id="badgeLevels">
+            <span class="badge-label">Niveles:</span>
+            <span class="badge-value" id="badgeLevelsValue">-</span>
           </div>
         </div>
+        <div class="header-actions">
+          <button class="theme-toggle" id="themeToggle" title="Cambiar tema">
+            <div class="toggle-track">
+              <div class="toggle-thumb">
+                <svg class="icon-sun" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <circle cx="12" cy="12" r="5"/>
+                  <line x1="12" y1="1" x2="12" y2="3"/>
+                  <line x1="12" y1="21" x2="12" y2="23"/>
+                  <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+                  <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+                  <line x1="1" y1="12" x2="3" y2="12"/>
+                  <line x1="21" y1="12" x2="23" y2="12"/>
+                  <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+                  <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+                </svg>
+                <svg class="icon-moon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+                </svg>
+              </div>
+            </div>
+          </button>
+          <button class="icon-button" id="toggleInfoBtn" title="Info">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"/>
+              <line x1="12" y1="16" x2="12" y2="12"/>
+              <line x1="12" y1="8" x2="12.01" y2="8"/>
+            </svg>
+          </button>
+          <button class="icon-button" id="toggleMainPanelBtn" title="Colapsar panel">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="6 9 12 15 18 9"/>
+            </svg>
+          </button>
+        </div>
       </div>
 
+      <!-- Parámetros principales -->
+      <div class="params-section" id="paramsSection">
+        <div class="param-control">
+          <label class="param-label">N (Lados)</label>
+          <div class="param-inputs">
+            <input type="number" class="param-number" id="nNum" value="11" min="3" max="100" step="1">
+            <input type="range" class="param-slider" id="nRange" value="11" min="3" max="100" step="1">
+          </div>
+        </div>
+
+        <div class="param-control">
+          <label class="param-label">α (Ángulo)</label>
+          <div class="param-inputs">
+            <input type="number" class="param-number" id="aNum" value="39.8" min="0.1" max="89.9" step="0.1">
+            <input type="range" class="param-slider" id="aRange" value="39.8" min="0.1" max="89.9" step="0.1">
+          </div>
+        </div>
+
+        <div class="param-control" id="dmaxControl">
+          <label class="param-label">Dmax (ecuador, m)</label>
+          <div class="param-inputs">
+            <input type="number" class="param-number" id="dmaxNum" value="10" min="0.1" max="50" step="0.1">
+            <input type="range" class="param-slider" id="dmaxRange" value="10" min="0.1" max="50" step="0.1">
+          </div>
+        </div>
+
+        <div class="param-control" id="floorDiameterControl" style="display: none;">
+          <label class="param-label">Ø del piso (m)</label>
+          <div class="param-inputs">
+            <input type="number" class="param-number" id="floorDiameterNum" value="5" min="0.1" max="50" step="0.1">
+            <input type="range" class="param-slider" id="floorDiameterRange" value="5" min="0.1" max="50" step="0.1">
+          </div>
+        </div>
+
+        <div class="cut-section">
+          <div class="param-control">
+            <label class="param-label">Niveles visibles</label>
+            <div class="param-inputs">
+              <input type="number" class="param-number cut-input" id="cutLevelNum" value="5" min="1" max="10">
+              <input type="range" class="param-slider cut-slider" id="cutLevelRange" value="5" min="1" max="10">
+            </div>
+          </div>
+          <button class="action-button cut-button" id="cutBtn">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
+            </svg>
+            <span>Crear porción</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Info rápida (colapsable en móvil) -->
       <div class="quick-info" id="quickInfo">
-        <div class="info-item">
-          <span>Altura Total</span>
-          <span class="mono" id="infoH">0.00</span>
-        </div>
-        <div class="info-item">
-          <span>h₁</span>
-          <span class="mono" id="infoH1">0.000</span>
-        </div>
-        <div class="info-item">
-          <span>Caras</span>
-          <span class="mono" id="infoFaces">0</span>
-        </div>
-        <div class="info-item">
-          <span id="diameterLabel">Dmax</span>
-          <span class="mono" id="infoDiameter">0.00</span>
-        </div>
-        <div class="info-item">
-          <span>Lado rombo</span>
-          <span class="mono" id="infoRhombusSide">0.000</span>
-        </div>
-        <div class="info-item" id="triangleBaseInfo" style="display: none;">
-          <span>Base triángulo</span>
-          <span class="mono" id="infoTriangleBase">0.000</span>
+        <div class="info-grid">
+          <div class="info-item">
+            <span class="info-label">Altura Total</span>
+            <span class="info-value" id="infoH">0.00</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">h₁</span>
+            <span class="info-value" id="infoH1">0.000</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">Caras</span>
+            <span class="info-value" id="infoFaces">0</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label" id="diameterLabel">Dmax</span>
+            <span class="info-value" id="infoDiameter">0.00</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">Lado rombo</span>
+            <span class="info-value" id="infoRhombusSide">0.000</span>
+          </div>
+          <div class="info-item" id="triangleBaseInfo" style="display: none;">
+            <span class="info-label">Base triángulo</span>
+            <span class="info-value" id="infoTriangleBase">0.000</span>
+          </div>
         </div>
       </div>
     </div>
   </div>
 
+  <!-- Botón flotante para opciones avanzadas -->
+  <button class="fab-button" id="toggleAdvancedBtn" title="Opciones avanzadas">
+    <svg class="fab-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <circle cx="12" cy="12" r="3"/>
+      <path d="M12 1v6m0 6v6m-5-7l10 10m0-10L7 17"/>
+    </svg>
+    <span class="fab-pulse"></span>
+  </button>
+
+  <!-- Panel de opciones avanzadas -->
   <div class="advanced-panel" id="advancedPanel">
-    <div class="card">
-      <div class="header">
-        <div class="title">
-          <h2>Opciones Avanzadas</h2>
-        </div>
-        <button class="icon-btn" id="closeAdvancedBtn">
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2">
-            <line x1="1" y1="1" x2="13" y2="13"/>
-            <line x1="13" y1="1" x2="1" y2="13"/>
+    <div class="advanced-card">
+      <div class="advanced-header">
+        <h2 class="advanced-title">Opciones Avanzadas</h2>
+        <button class="icon-button close-button" id="closeAdvancedBtn">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"/>
+            <line x1="6" y1="6" x2="18" y2="18"/>
           </svg>
         </button>
       </div>
 
-      <div class="advanced-controls">
-        <div class="control-section">
-          <h3 class="section-title">Visualización</h3>
-          <div class="btn-grid-2col">
-            <button class="btn" id="facesBtn">Caras desactivadas</button>
-            <button class="btn primary" id="colorByLevelBtn">Skin: Arcoíris</button>
-            <button class="btn primary" id="togglePolysBtn">Polígonos activados</button>
-            <button class="btn primary" id="toggleLinesBtn">Aristas activadas</button>
-            <button class="btn primary" id="toggleAxisBtn">Eje activado</button>
-            <button class="btn" id="fitBtn">Ajustar cámara</button>
-          </div>
-        </div>
-
-        <div class="control-section">
-          <h3 class="section-title">Rotación Automática</h3>
-          <div class="rotation-control">
-            <button class="btn btn-rotation" id="rotationBtn">▶ Rotar</button>
-            <div class="rotation-speed-control">
-              <label class="small-label">Velocidad</label>
-              <input type="range" class="rotation-slider" id="rotationSpeed" value="30" min="1" max="100" step="1">
+      <div class="advanced-content">
+        <!-- Visualización -->
+        <div class="option-group">
+          <button class="group-header" data-group="visualization">
+            <svg class="group-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+              <circle cx="12" cy="12" r="3"/>
+            </svg>
+            <span class="group-title">Visualización</span>
+            <svg class="group-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="6 9 12 15 18 9"/>
+            </svg>
+          </button>
+          <div class="group-content">
+            <div class="button-grid">
+              <button class="option-button" id="facesBtn">
+                <span class="button-status">○</span>
+                <span>Caras</span>
+              </button>
+              <button class="option-button active" id="colorByLevelBtn">
+                <span class="button-status">●</span>
+                <span>Arcoíris</span>
+              </button>
+              <button class="option-button active" id="togglePolysBtn">
+                <span class="button-status">●</span>
+                <span>Polígonos</span>
+              </button>
+              <button class="option-button active" id="toggleLinesBtn">
+                <span class="button-status">●</span>
+                <span>Aristas</span>
+              </button>
+              <button class="option-button active" id="toggleAxisBtn">
+                <span class="button-status">●</span>
+                <span>Eje</span>
+              </button>
+              <button class="option-button" id="fitBtn">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
+                </svg>
+                <span>Ajustar cámara</span>
+              </button>
             </div>
           </div>
         </div>
 
-        <div class="control-section">
-          <h3 class="section-title">Compartir</h3>
-          <button class="btn btn-full primary" id="shareUrlBtn">
-            📋 Copiar enlace para compartir
+        <!-- Rotación -->
+        <div class="option-group">
+          <button class="group-header" data-group="rotation">
+            <svg class="group-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>
+            </svg>
+            <span class="group-title">Rotación Automática</span>
+            <svg class="group-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="6 9 12 15 18 9"/>
+            </svg>
           </button>
+          <div class="group-content">
+            <button class="action-button rotation-button" id="rotationBtn">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polygon points="5 3 19 12 5 21 5 3"/>
+              </svg>
+              <span>Iniciar rotación</span>
+            </button>
+            <div class="speed-control">
+              <label class="speed-label">Velocidad</label>
+              <input type="range" class="speed-slider" id="rotationSpeed" value="30" min="1" max="100" step="1">
+            </div>
+          </div>
         </div>
 
-        <div class="control-section">
-          <h3 class="section-title">Exportar</h3>
-          <button class="btn btn-full primary" id="exportObjBtn">
-            Descargar OBJ
+        <!-- Compartir -->
+        <div class="option-group">
+          <button class="group-header" data-group="share">
+            <svg class="group-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="18" cy="5" r="3"/>
+              <circle cx="6" cy="12" r="3"/>
+              <circle cx="18" cy="19" r="3"/>
+              <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
+              <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+            </svg>
+            <span class="group-title">Compartir</span>
+            <svg class="group-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="6 9 12 15 18 9"/>
+            </svg>
           </button>
-          <button class="btn btn-full" id="exportPdfBtn">
-            Generar Reporte PDF
-          </button>
-          <div class="btn-grid-2col" style="margin-top: 8px;">
-            <button class="btn" id="exportJsonBtn" style="font-size: 13px; padding: 8px;">
-              Exportar JSON
-            </button>
-            <button class="btn" id="importJsonBtn" style="font-size: 13px; padding: 8px;">
-              Importar JSON
+          <div class="group-content">
+            <button class="action-button primary" id="shareUrlBtn">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+                <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+              </svg>
+              <span>Copiar enlace</span>
             </button>
           </div>
         </div>
+
+        <!-- Exportar -->
+        <div class="option-group">
+          <button class="group-header" data-group="export">
+            <svg class="group-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="7 10 12 15 17 10"/>
+              <line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+            <span class="group-title">Exportar</span>
+            <svg class="group-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="6 9 12 15 18 9"/>
+            </svg>
+          </button>
+          <div class="group-content">
+            <button class="action-button primary" id="exportObjBtn">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="7 10 12 15 17 10"/>
+                <line x1="12" y1="15" x2="12" y2="3"/>
+              </svg>
+              <span>Descargar OBJ</span>
+            </button>
+            <button class="action-button" id="exportPdfBtn">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                <polyline points="14 2 14 8 20 8"/>
+              </svg>
+              <span>Generar PDF</span>
+            </button>
+            <div class="button-grid" style="margin-top: 8px;">
+              <button class="option-button compact" id="exportJsonBtn">
+                <span>JSON ↓</span>
+              </button>
+              <button class="option-button compact" id="importJsonBtn">
+                <span>JSON ↑</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 
+  <script type="module" src="js/main.js"></script>
 </body>
 </html>

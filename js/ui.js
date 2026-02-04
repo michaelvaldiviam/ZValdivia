@@ -60,15 +60,28 @@ export class UIManager {
     this.infoH = document.getElementById('infoH');
     this.infoH1 = document.getElementById('infoH1');
     this.infoFaces = document.getElementById('infoFaces');
-    this.statusBadge = document.getElementById('statusBadge');
     this.infoDiameter = document.getElementById('infoDiameter');
     this.diameterLabel = document.getElementById('diameterLabel');
     this.infoRhombusSide = document.getElementById('infoRhombusSide');
     this.infoTriangleBase = document.getElementById('infoTriangleBase');
     this.triangleBaseInfo = document.getElementById('triangleBaseInfo');
+    
+    // Badges
+    this.badgeN = document.getElementById('badgeN');
+    this.badgeAngle = document.getElementById('badgeAngle');
+    this.badgeDiameter = document.getElementById('badgeDiameter');
+    this.badgeLevels = document.getElementById('badgeLevels');
+    this.badgeLevelsValue = document.getElementById('badgeLevelsValue');
 
-    // 🚀 PERFORMANCE: Agregar indicador de FPS
-    this.createPerformanceIndicator();
+    // Panel collapse controls
+    this.toggleMainPanelBtn = document.getElementById('toggleMainPanelBtn');
+    this.paramsSection = document.getElementById('paramsSection');
+
+    // 🚀 PERFORMANCE: No crear indicador de FPS (opcional)
+    // this.createPerformanceIndicator();
+    
+    // Configurar grupos colapsables
+    this.setupCollapsibleGroups();
   }
 
   createPerformanceIndicator() {
@@ -95,6 +108,20 @@ export class UIManager {
       document.body.appendChild(fpsDiv);
       this.fpsCounter = fpsDiv;
     }
+  }
+
+  setupCollapsibleGroups() {
+    // Configurar todos los grupos colapsables
+    const groupHeaders = document.querySelectorAll('.group-header');
+    groupHeaders.forEach(header => {
+      header.addEventListener('click', () => {
+        const group = header.parentElement;
+        group.classList.toggle('collapsed');
+      });
+    });
+
+    // Por defecto, todos los grupos empiezan colapsados
+    document.querySelectorAll('.option-group').forEach(g => g.classList.add('collapsed'));
   }
 
   showNotification(message, type = 'info') {
@@ -182,6 +209,10 @@ export class UIManager {
     if (this.toggleInfoBtn) 
       this.toggleInfoBtn.addEventListener('click', () => this.toggleInfo());
 
+    // Main panel collapse toggle
+    if (this.toggleMainPanelBtn)
+      this.toggleMainPanelBtn.addEventListener('click', () => this.toggleMainPanel());
+
     // Input controls - con debouncing y throttling
     if (this.dmaxNum) 
       this.dmaxNum.addEventListener('input', () => this.debouncedSyncInputs('num', 'dmax'));
@@ -243,15 +274,27 @@ export class UIManager {
     }
   }
 
+  toggleMainPanel() {
+    if (this.paramsSection) {
+      this.paramsSection.classList.toggle('collapsed');
+    }
+    if (this.quickInfo) {
+      this.quickInfo.classList.toggle('collapsed');
+    }
+    if (this.toggleMainPanelBtn) {
+      this.toggleMainPanelBtn.classList.toggle('collapsed');
+    }
+  }
+
   openAdvancedPanel() {
     if (this.advancedPanel) {
-      this.advancedPanel.style.display = 'block';
+      this.advancedPanel.classList.add('visible');
     }
   }
 
   closeAdvancedPanel() {
     if (this.advancedPanel) {
-      this.advancedPanel.style.display = 'none';
+      this.advancedPanel.classList.remove('visible');
     }
   }
 
@@ -318,13 +361,44 @@ export class UIManager {
     this.updateHeightDisplay();
 
     if (this.infoH1) this.infoH1.textContent = state.h1.toFixed(3);
-    if (this.statusBadge) this.statusBadge.textContent = `N=${state.N} · α=${state.aDeg.toFixed(1)}°`;
+    
+    // ✅ NUEVO: Actualizar badges del header
+    this.updateBadges();
 
     // Actualizar información geométrica
     this.updateGeometryInfo();
     
     // ✅ NUEVO: Actualizar controles de diámetro
     this.toggleDiameterControls();
+  }
+
+  // ✅ NUEVO: Método para actualizar los badges del header
+  updateBadges() {
+    if (this.badgeN) {
+      this.badgeN.textContent = state.N;
+    }
+    if (this.badgeAngle) {
+      this.badgeAngle.textContent = `${state.aDeg.toFixed(1)}°`;
+    }
+    if (this.badgeDiameter) {
+      if (state.cutActive) {
+        const Rk = (state.Dmax / 2) * Math.sin((state.cutLevel * Math.PI) / state.N);
+        const diameterCut = 2 * Rk;
+        this.badgeDiameter.textContent = `${diameterCut.toFixed(1)}m`;
+      } else {
+        this.badgeDiameter.textContent = `${state.Dmax.toFixed(1)}m`;
+      }
+    }
+    if (this.badgeLevels && this.badgeLevelsValue) {
+      if (state.cutActive) {
+        this.badgeLevels.style.display = 'inline-flex';
+        // Mostrar niveles visibles (no cutLevel interno)
+        const visibleLevels = state.N - state.cutLevel;
+        this.badgeLevelsValue.textContent = visibleLevels;
+      } else {
+        this.badgeLevels.style.display = 'none';
+      }
+    }
   }
 
   // ✅ NUEVO: Actualizar Dmax desde el diámetro del piso
@@ -545,14 +619,18 @@ export class UIManager {
       this.sceneManager.requestRebuild();
       this.updateFacesCount();
       this.updateGeometryInfo();
+      this.updateBadges();
     }
   }
 
   toggleFaces() {
     state.rhombiVisible = !state.rhombiVisible;
     if (this.facesBtn) {
-      this.facesBtn.classList.toggle('primary', state.rhombiVisible);
-      this.facesBtn.textContent = state.rhombiVisible ? 'Caras activadas' : 'Caras desactivadas';
+      this.facesBtn.classList.toggle('active', state.rhombiVisible);
+      const status = this.facesBtn.querySelector('.button-status');
+      if (status) {
+        status.textContent = state.rhombiVisible ? '●' : '○';
+      }
     }
     this.sceneManager.requestRebuild();
     this.updateFacesCount();
@@ -561,8 +639,11 @@ export class UIManager {
   togglePolygons() {
     state.polysVisible = !state.polysVisible;
     if (this.togglePolysBtn) {
-      this.togglePolysBtn.classList.toggle('primary', state.polysVisible);
-      this.togglePolysBtn.textContent = state.polysVisible ? 'Polígonos activados' : 'Polígonos desactivados';
+      this.togglePolysBtn.classList.toggle('active', state.polysVisible);
+      const status = this.togglePolysBtn.querySelector('.button-status');
+      if (status) {
+        status.textContent = state.polysVisible ? '●' : '○';
+      }
     }
     this.sceneManager.requestRebuild();
   }
@@ -570,8 +651,11 @@ export class UIManager {
   toggleLines() {
     state.linesVisible = !state.linesVisible;
     if (this.toggleLinesBtn) {
-      this.toggleLinesBtn.classList.toggle('primary', state.linesVisible);
-      this.toggleLinesBtn.textContent = state.linesVisible ? 'Aristas activadas' : 'Aristas desactivadas';
+      this.toggleLinesBtn.classList.toggle('active', state.linesVisible);
+      const status = this.toggleLinesBtn.querySelector('.button-status');
+      if (status) {
+        status.textContent = state.linesVisible ? '●' : '○';
+      }
     }
     this.sceneManager.requestRebuild();
   }
@@ -585,8 +669,11 @@ export class UIManager {
 
     state.colorByLevel = !state.colorByLevel;
     if (this.colorByLevelBtn) {
-      this.colorByLevelBtn.classList.toggle('primary', !state.colorByLevel);
-      this.colorByLevelBtn.textContent = state.colorByLevel ? 'Skin Arcoíris' : 'Skin Cristal';
+      this.colorByLevelBtn.classList.toggle('active', state.colorByLevel);
+      const status = this.colorByLevelBtn.querySelector('.button-status');
+      if (status) {
+        status.textContent = state.colorByLevel ? '●' : '○';
+      }
     }
     this.sceneManager.requestRebuild();
     this.updateFacesCount();
@@ -595,8 +682,11 @@ export class UIManager {
   toggleAxis() {
     state.axisVisible = !state.axisVisible;
     if (this.toggleAxisBtn) {
-      this.toggleAxisBtn.classList.toggle('primary', state.axisVisible);
-      this.toggleAxisBtn.textContent = state.axisVisible ? 'Eje activado' : 'Eje desactivado';
+      this.toggleAxisBtn.classList.toggle('active', state.axisVisible);
+      const status = this.toggleAxisBtn.querySelector('.button-status');
+      if (status) {
+        status.textContent = state.axisVisible ? '●' : '○';
+      }
     }
     this.sceneManager.requestRebuild();
   }
@@ -613,7 +703,11 @@ export class UIManager {
     state.cutActive = !state.cutActive;
     if (this.cutBtn) {
       this.cutBtn.classList.toggle('active', state.cutActive);
-      this.cutBtn.textContent = state.cutActive ? 'Desactivar porción' : 'Crear porción';
+      // Actualizar solo el texto del span, manteniendo el SVG
+      const btnText = this.cutBtn.querySelector('span');
+      if (btnText) {
+        btnText.textContent = state.cutActive ? 'Desactivar porción' : 'Crear porción';
+      }
     }
 
     // ✅ NUEVO: Actualizar altura visible
@@ -621,6 +715,9 @@ export class UIManager {
     
     // ✅ NUEVO: Actualizar controles de diámetro
     this.toggleDiameterControls();
+    
+    // ✅ NUEVO: Actualizar badges
+    this.updateBadges();
 
     this.sceneManager.requestRebuild();
     this.updateFacesCount();
@@ -646,44 +743,63 @@ export class UIManager {
 
     // Faces
     if (this.facesBtn) {
-      this.facesBtn.classList.toggle('primary', state.rhombiVisible);
-      this.facesBtn.textContent = state.rhombiVisible ? 'Caras activadas' : 'Caras desactivadas';
+      this.facesBtn.classList.toggle('active', state.rhombiVisible);
+      const status = this.facesBtn.querySelector('.button-status');
+      if (status) {
+        status.textContent = state.rhombiVisible ? '●' : '○';
+      }
     }
 
     // Polygons
     if (this.togglePolysBtn) {
-      this.togglePolysBtn.classList.toggle('primary', state.polysVisible);
-      this.togglePolysBtn.textContent = state.polysVisible ? 'Polígonos activados' : 'Polígonos desactivados';
+      this.togglePolysBtn.classList.toggle('active', state.polysVisible);
+      const status = this.togglePolysBtn.querySelector('.button-status');
+      if (status) {
+        status.textContent = state.polysVisible ? '●' : '○';
+      }
     }
 
     // Lines
     if (this.toggleLinesBtn) {
-      this.toggleLinesBtn.classList.toggle('primary', state.linesVisible);
-      this.toggleLinesBtn.textContent = state.linesVisible ? 'Aristas activadas' : 'Aristas desactivadas';
+      this.toggleLinesBtn.classList.toggle('active', state.linesVisible);
+      const status = this.toggleLinesBtn.querySelector('.button-status');
+      if (status) {
+        status.textContent = state.linesVisible ? '●' : '○';
+      }
     }
 
     // Axis
     if (this.toggleAxisBtn) {
-      this.toggleAxisBtn.classList.toggle('primary', state.axisVisible);
-      this.toggleAxisBtn.textContent = state.axisVisible ? 'Eje activado' : 'Eje desactivado';
+      this.toggleAxisBtn.classList.toggle('active', state.axisVisible);
+      const status = this.toggleAxisBtn.querySelector('.button-status');
+      if (status) {
+        status.textContent = state.axisVisible ? '●' : '○';
+      }
     }
 
     // Color by level
     if (this.colorByLevelBtn) {
-      this.colorByLevelBtn.classList.toggle('primary', !state.colorByLevel);
-      this.colorByLevelBtn.textContent = state.colorByLevel ? 'Skin: Arcoíris' : 'Skin: Cristal';
+      this.colorByLevelBtn.classList.toggle('active', state.colorByLevel);
+      const status = this.colorByLevelBtn.querySelector('.button-status');
+      if (status) {
+        status.textContent = state.colorByLevel ? '●' : '○';
+      }
     }
 
     // Cut button
     if (this.cutBtn) {
       this.cutBtn.classList.toggle('active', state.cutActive);
-      this.cutBtn.textContent = state.cutActive ? 'Desactivar porción' : 'Crear porción';
+      const btnText = this.cutBtn.querySelector('span');
+      if (btnText) {
+        btnText.textContent = state.cutActive ? 'Desactivar porción' : 'Crear porción';
+      }
     }
 
     // Toggle diameter controls
     this.toggleDiameterControls();
     this.updateCutLevelDisplay();
     this.updateGeometryInfo();
+    this.updateBadges();
   }
 
   initialize() {

@@ -2,7 +2,7 @@ import { SceneManager } from './scene.js';
 import { UIManager } from './ui.js';
 import { OBJExporter } from './export.js';
 import { PDFReporter } from './pdf-report.js';
-import { ShareManager } from './share.js';  // ✅ NUEVO
+import { ShareManager } from './share.js';
 import { state, rhombiData } from './state.js';
 
 /**
@@ -10,10 +10,14 @@ import { state, rhombiData } from './state.js';
  */
 class App {
   constructor() {
+    this.loadingComplete = false;
     this.init();
   }
 
-  init() {
+  async init() {
+    // Mostrar pantalla de carga
+    await this.showLoadingScreen();
+
     // Obtener canvas
     const canvas = document.getElementById('c');
 
@@ -23,27 +27,76 @@ class App {
     // Inicializar el gestor de UI
     this.uiManager = new UIManager(this.sceneManager);
 
-    // ✅ NUEVO: Inicializar ShareManager
+    // Inicializar ShareManager
     this.shareManager = new ShareManager(this.uiManager, this.sceneManager);
 
-    // ✅ NUEVO: Cargar configuración compartida desde URL
+    // Cargar configuración compartida desde URL
     this.loadSharedConfig();
 
     // Configurar botones de exportación
     this.setupExportButton();
     this.setupPDFButton();
     
-    // ✅ NUEVO: Configurar botones de compartir
+    // Configurar botones de compartir
     this.setupShareButtons();
 
     // Inicializar la aplicación
     this.uiManager.initialize();
 
+    // Configurar modo oscuro/claro
+    this.setupThemeToggle();
+
     // Iniciar el loop de renderizado
     this.sceneManager.render();
+
+    // Ocultar pantalla de carga
+    await this.hideLoadingScreen();
+
+    this.loadingComplete = true;
   }
 
-  // ✅ NUEVO
+  async showLoadingScreen() {
+    return new Promise((resolve) => {
+      // Simular carga mínima
+      setTimeout(resolve, 1500);
+    });
+  }
+
+  async hideLoadingScreen() {
+    const loadingScreen = document.getElementById('loadingScreen');
+    if (loadingScreen) {
+      loadingScreen.classList.add('fade-out');
+      await new Promise(resolve => setTimeout(resolve, 500));
+      loadingScreen.style.display = 'none';
+    }
+  }
+
+  setupThemeToggle() {
+    const themeToggle = document.getElementById('themeToggle');
+    if (themeToggle) {
+      // Cargar preferencia guardada
+      const savedTheme = localStorage.getItem('theme') || 'dark';
+      if (savedTheme === 'light') {
+        document.body.classList.remove('dark-mode');
+        document.body.classList.add('light-mode');
+      }
+
+      themeToggle.addEventListener('click', () => {
+        const isLight = document.body.classList.contains('light-mode');
+        
+        if (isLight) {
+          document.body.classList.remove('light-mode');
+          document.body.classList.add('dark-mode');
+          localStorage.setItem('theme', 'dark');
+        } else {
+          document.body.classList.remove('dark-mode');
+          document.body.classList.add('light-mode');
+          localStorage.setItem('theme', 'light');
+        }
+      });
+    }
+  }
+
   loadSharedConfig() {
     const loaded = this.shareManager.loadFromURL();
     if (loaded) {
@@ -102,7 +155,6 @@ class App {
     }
   }
 
-  // ✅ NUEVO
   setupShareButtons() {
     const shareUrlBtn = document.getElementById('shareUrlBtn');
     if (shareUrlBtn) {
