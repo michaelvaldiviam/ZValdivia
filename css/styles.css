@@ -181,6 +181,149 @@ body {
 }
 
 /* ============================================
+   INDICADOR FLOTANTE DE ALTURA
+   ============================================ */
+.height-indicator {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  transform: none;
+  background: var(--surface-base);
+  backdrop-filter: var(--blur-lg);
+  -webkit-backdrop-filter: var(--blur-lg);
+  border: 2px solid var(--accent-primary);
+  border-radius: 16px;
+  padding: 16px 24px;
+  box-shadow: var(--shadow-xl), 0 0 20px rgba(99, 102, 241, 0.3);
+  z-index: 200;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  min-width: 200px;
+}
+
+.height-indicator.visible {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: all;
+}
+
+.height-indicator.editing {
+  border-color: var(--success);
+  box-shadow: var(--shadow-xl), 0 0 20px rgba(16, 185, 129, 0.4);
+}
+
+.height-indicator-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-tertiary);
+  margin-bottom: 8px;
+  text-align: center;
+}
+
+.height-indicator-input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.height-indicator-input {
+  font-size: 28px;
+  font-weight: 700;
+  font-family: ui-monospace, 'SF Mono', Monaco, monospace;
+  color: var(--accent-primary);
+  text-align: center;
+  line-height: 1.2;
+  background: transparent;
+  border: none;
+  outline: none;
+  width: 120px;
+  padding: 4px;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.height-indicator-input:focus {
+  background: rgba(99, 102, 241, 0.1);
+  cursor: text;
+}
+
+.height-indicator-input::placeholder {
+  color: var(--text-tertiary);
+  opacity: 0.5;
+}
+
+/* Chrome, Safari, Edge, Opera - ocultar flechas */
+.height-indicator-input::-webkit-outer-spin-button,
+.height-indicator-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+/* Firefox - ocultar flechas */
+.height-indicator-input[type=number] {
+  -moz-appearance: textfield;
+}
+
+.height-indicator-unit {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  font-family: ui-monospace, 'SF Mono', Monaco, monospace;
+}
+
+.height-indicator-button {
+  width: 36px;
+  height: 36px;
+  border: none;
+  background: var(--accent-gradient);
+  color: #fff;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  opacity: 0;
+  transform: scale(0.8);
+  pointer-events: none;
+}
+
+.height-indicator.editing .height-indicator-button {
+  opacity: 1;
+  transform: scale(1);
+  pointer-events: all;
+}
+
+.height-indicator-button:hover {
+  transform: scale(1.05);
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4);
+}
+
+.height-indicator-button:active {
+  transform: scale(0.95);
+}
+
+.height-indicator-hint {
+  font-size: 9px;
+  color: var(--text-tertiary);
+  text-align: center;
+  margin-top: 4px;
+  opacity: 0.7;
+  font-style: italic;
+}
+
+.height-indicator.editing .height-indicator-hint {
+  display: none;
+}
+
+/* ============================================
    BRANDING
    ============================================ */
 .app-branding {
@@ -1253,6 +1396,52 @@ body.light-mode .speed-slider {
     height: 38px;
     font-size: 12px;
   }
+
+  /* Indicador de altura en móvil - más compacto */
+  .height-indicator {
+    bottom: auto;
+    top: auto;
+    right: 12px;
+    left: 12px;
+    min-width: auto;
+    padding: 10px 14px;
+    border-radius: 12px;
+  }
+
+  .height-indicator-label {
+    font-size: 9px;
+    margin-bottom: 4px;
+  }
+
+  .height-indicator-input-wrapper {
+    gap: 6px;
+    margin-bottom: 4px;
+  }
+
+  .height-indicator-input {
+    font-size: 20px;
+    width: 80px;
+    padding: 2px;
+  }
+
+  .height-indicator-unit {
+    font-size: 16px;
+  }
+
+  .height-indicator-button {
+    width: 28px;
+    height: 28px;
+  }
+
+  .height-indicator-button svg {
+    width: 14px;
+    height: 14px;
+  }
+
+  .height-indicator-hint {
+    font-size: 7px;
+    margin-top: 2px;
+  }
 }
 
 /* Landscape mobile */
@@ -1276,6 +1465,13 @@ body.light-mode .speed-slider {
     bottom: 8px;
     left: 50%;
     transform: translateX(-50%);
+  }
+
+  /* Indicador de altura en landscape - a la izquierda del panel */
+  .height-indicator {
+    right: auto;
+    left: 12px;
+    bottom: 20px;
   }
 }
 
@@ -1309,88 +1505,4 @@ body,
   transition-property: background-color, border-color, color, box-shadow;
   transition-duration: 0.3s;
   transition-timing-function: ease;
-}
-/* =========================================================
-   COMPACTACIÓN DEL PANEL PRINCIPAL (MOBILE)
-   PATCH – ZValdivia
-   ========================================================= */
-
-/* Nombre de la app sobre los badges */
-.header-info::before {
-  content: "ZValdivia";
-  display: block;
-  font-size: 14px;
-  font-weight: 800;
-  letter-spacing: -0.02em;
-  color: var(--text-primary);
-  margin-bottom: 6px;
-}
-
-/* Ajustes SOLO para móvil */
-@media (max-width: 640px) {
-
-  /* Menos padding y menos separación entre sliders */
-  .params-section {
-    padding: 8px 12px;
-    gap: 8px;
-  }
-
-  /* Cada control más compacto */
-  .param-control {
-    gap: 4px;
-  }
-
-  /* Número + slider más juntos */
-  .param-inputs {
-    grid-template-columns: 60px 1fr;
-    gap: 6px;
-  }
-
-  /* Inputs numéricos más bajos */
-  .param-number {
-    height: 32px;
-    font-size: 12px;
-    padding: 0 6px;
-  }
-
-  /* Sliders más finos */
-  .param-slider {
-    height: 4px;
-  }
-
-  .param-slider::-webkit-slider-thumb,
-  .param-slider::-moz-range-thumb {
-    width: 14px;
-    height: 14px;
-  }
-
-  /* Sección de corte más compacta */
-  .cut-section {
-    margin-top: 4px;
-    padding-top: 8px;
-  }
-
-  /* Botón Crear/Desactivar porción más bajo */
-  .action-button {
-    height: 34px;
-    font-size: 11px;
-    margin-top: 6px;
-  }
-
-  /* Quick info más compacto */
-  .quick-info {
-    padding: 10px 12px;
-  }
-
-  .info-grid {
-    gap: 8px;
-  }
-
-  .info-label {
-    font-size: 9px;
-  }
-
-  .info-value {
-    font-size: 13px;
-  }
 }
