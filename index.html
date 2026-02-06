@@ -47,6 +47,28 @@
   <!-- Canvas 3D -->
   <canvas id="c"></canvas>
 
+  <!-- Indicador flotante de altura interactivo -->
+  <div class="height-indicator" id="heightIndicator">
+    <div class="height-indicator-label">Altura Total</div>
+    <div class="height-indicator-input-wrapper">
+      <input type="number" 
+             class="height-indicator-input" 
+             id="heightIndicatorInput" 
+             step="0.01" 
+             min="0.1"
+             placeholder="0.00">
+      <span class="height-indicator-unit">m</span>
+    </div>
+    <button class="height-indicator-button" id="heightIndicatorButton">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+        <polyline points="20 6 9 17 4 12"/>
+      </svg>
+    </button>
+    <div class="height-indicator-hint">
+      Click para editar la altura
+    </div>
+  </div>
+
   <!-- Branding discreto -->
   <div class="app-branding">
     <span class="brand-name">ZValdivia</span>
