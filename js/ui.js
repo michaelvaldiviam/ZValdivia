@@ -77,6 +77,12 @@ export class UIManager {
     this.toggleMainPanelBtn = document.getElementById('toggleMainPanelBtn');
     this.paramsSection = document.getElementById('paramsSection');
 
+    // Height indicator
+    this.heightIndicator = document.getElementById('heightIndicator');
+    this.heightIndicatorInput = document.getElementById('heightIndicatorInput');
+    this.heightIndicatorButton = document.getElementById('heightIndicatorButton');
+    this.heightIndicatorTimer = null;
+
     // 🚀 PERFORMANCE: No crear indicador de FPS (opcional)
     // this.createPerformanceIndicator();
     
@@ -226,21 +232,42 @@ export class UIManager {
       this.floorDiameterRange.addEventListener('input', () => this.throttledSyncFloorDiameter('range'));
 
     // N es el más crítico - throttling más agresivo
-    if (this.nNum) 
-      this.nNum.addEventListener('input', () => this.debouncedSyncInputs('num', 'n'));
-    if (this.nRange) 
-      this.nRange.addEventListener('input', () => this.throttledSyncInputs('range', 'n'));
+    if (this.nNum) {
+      this.nNum.addEventListener('input', () => {
+        this.debouncedSyncInputs('num', 'n');
+      });
+    }
+    if (this.nRange) {
+      this.nRange.addEventListener('input', () => {
+        this.throttledSyncInputs('range', 'n');
+      });
+    }
 
-    if (this.aNum) 
-      this.aNum.addEventListener('input', () => this.debouncedSyncInputs('num', 'a'));
-    if (this.aRange) 
-      this.aRange.addEventListener('input', () => this.throttledSyncInputs('range', 'a'));
+    if (this.aNum) {
+      this.aNum.addEventListener('input', () => {
+        this.debouncedSyncInputs('num', 'a');
+        this.showHeightIndicator();
+      });
+    }
+    if (this.aRange) {
+      this.aRange.addEventListener('input', () => {
+        this.throttledSyncInputs('range', 'a');
+        this.showHeightIndicator();
+      });
+      // NO ocultar automáticamente - dejar que el timer lo haga
+    }
 
     // Cut plane controls
-    if (this.cutLevelNum) 
-      this.cutLevelNum.addEventListener('input', () => this.debouncedSyncCutInputs('num'));
-    if (this.cutLevelRange) 
-      this.cutLevelRange.addEventListener('input', () => this.throttledSyncCutInputs('range'));
+    if (this.cutLevelNum) {
+      this.cutLevelNum.addEventListener('input', () => {
+        this.debouncedSyncCutInputs('num');
+      });
+    }
+    if (this.cutLevelRange) {
+      this.cutLevelRange.addEventListener('input', () => {
+        this.throttledSyncCutInputs('range');
+      });
+    }
 
     // Button controls
     if (this.facesBtn) 
@@ -251,6 +278,20 @@ export class UIManager {
       this.toggleLinesBtn.addEventListener('click', () => this.toggleLines());
     if (this.fitBtn) 
       this.fitBtn.addEventListener('click', () => this.sceneManager.fitCamera());
+
+    // Height indicator interactivity
+    if (this.heightIndicatorInput) {
+      this.heightIndicatorInput.addEventListener('focus', () => this.onHeightInputFocus());
+      this.heightIndicatorInput.addEventListener('blur', () => this.onHeightInputBlur());
+      this.heightIndicatorInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+          this.applyHeightChange();
+        }
+      });
+    }
+    if (this.heightIndicatorButton) {
+      this.heightIndicatorButton.addEventListener('click', () => this.applyHeightChange());
+    }
     if (this.colorByLevelBtn) 
       this.colorByLevelBtn.addEventListener('click', () => this.toggleColorByLevel());
     if (this.toggleAxisBtn) 
@@ -284,6 +325,183 @@ export class UIManager {
     if (this.toggleMainPanelBtn) {
       this.toggleMainPanelBtn.classList.toggle('collapsed');
     }
+  }
+
+  showHeightIndicator() {
+    if (!this.heightIndicator || !this.heightIndicatorInput) return;
+
+    // Calcular altura total visible
+    const nivelesVisibles = state.cutActive ? state.N - state.cutLevel : state.N;
+    const alturaVisible = state.h1 * nivelesVisibles;
+
+    // Actualizar valor en el input
+    this.heightIndicatorInput.value = alturaVisible.toFixed(2);
+
+    // Posicionar dinámicamente en móviles justo encima del control de ángulo
+    if (window.innerWidth <= 640) {
+      const mainControls = document.getElementById('mainControls');
+      if (mainControls) {
+        const rect = mainControls.getBoundingClientRect();
+        // Posicionar justo arriba del panel con un margen de 12px
+        this.heightIndicator.style.bottom = `${window.innerHeight - rect.top + 12}px`;
+      }
+    } else {
+      // En desktop, mantener posición fija bottom-right
+      this.heightIndicator.style.bottom = '20px';
+    }
+
+    // Mostrar indicador
+    this.heightIndicator.classList.add('visible');
+
+    // Cancelar timer anterior si existe
+    if (this.heightIndicatorTimer) {
+      clearTimeout(this.heightIndicatorTimer);
+    }
+
+    // Auto-ocultar después de 5 segundos de inactividad (solo si no está en edición)
+    // Tiempo aumentado para dar oportunidad de interactuar
+    if (!this.heightIndicator.classList.contains('editing')) {
+      this.heightIndicatorTimer = setTimeout(() => {
+        this.hideHeightIndicator();
+      }, 5000);
+    }
+  }
+
+  hideHeightIndicator() {
+    if (!this.heightIndicator) return;
+
+    // No ocultar si está en modo edición
+    if (this.heightIndicator.classList.contains('editing')) {
+      return;
+    }
+
+    // Cancelar timer si existe
+    if (this.heightIndicatorTimer) {
+      clearTimeout(this.heightIndicatorTimer);
+      this.heightIndicatorTimer = null;
+    }
+
+    // Ocultar indicador
+    this.heightIndicator.classList.remove('visible');
+  }
+
+  onHeightInputFocus() {
+    if (!this.heightIndicator) return;
+
+    // Entrar en modo edición
+    this.heightIndicator.classList.add('editing');
+
+    // Cancelar auto-hide
+    if (this.heightIndicatorTimer) {
+      clearTimeout(this.heightIndicatorTimer);
+      this.heightIndicatorTimer = null;
+    }
+
+    // Seleccionar todo el texto para facilitar la edición
+    if (this.heightIndicatorInput) {
+      this.heightIndicatorInput.select();
+    }
+  }
+
+  onHeightInputBlur() {
+    // Pequeño delay para permitir que el botón sea clickeable
+    setTimeout(() => {
+      if (!this.heightIndicator) return;
+      
+      // Salir del modo edición solo si no se está clickeando el botón
+      if (document.activeElement !== this.heightIndicatorButton) {
+        this.heightIndicator.classList.remove('editing');
+        
+        // Reiniciar auto-hide con más tiempo
+        this.heightIndicatorTimer = setTimeout(() => {
+          this.hideHeightIndicator();
+        }, 5000);
+      }
+    }, 100);
+  }
+
+  applyHeightChange() {
+    if (!this.heightIndicatorInput) return;
+
+    const inputValue = parseFloat(this.heightIndicatorInput.value);
+
+    // Validar entrada
+    if (isNaN(inputValue) || inputValue <= 0) {
+      this.showNotification('Por favor ingresa una altura válida mayor a 0', 'error');
+      return;
+    }
+
+    // Calcular altura mínima y máxima posible
+    const nivelesVisibles = state.cutActive ? state.N - state.cutLevel : state.N;
+    
+    // Altura mínima: con ángulo de 0.1°
+    const minAngle = 0.1 * Math.PI / 180;
+    const minH1 = (state.Dmax / 2) * Math.tan(minAngle) * Math.sin(Math.PI / state.N);
+    const minHeight = minH1 * nivelesVisibles;
+    
+    // Altura máxima: con ángulo de 89°
+    const maxAngle = 89 * Math.PI / 180;
+    const maxH1 = (state.Dmax / 2) * Math.tan(maxAngle) * Math.sin(Math.PI / state.N);
+    const maxHeight = maxH1 * nivelesVisibles;
+
+    if (inputValue < minHeight) {
+      this.showNotification(`Altura muy pequeña. Mínimo: ${minHeight.toFixed(2)} m`, 'error');
+      return;
+    }
+
+    if (inputValue > maxHeight) {
+      this.showNotification(`Altura muy grande. Máximo: ${maxHeight.toFixed(2)} m`, 'error');
+      return;
+    }
+
+    // Calcular h1 necesario
+    const h1_needed = inputValue / nivelesVisibles;
+
+    // Calcular ángulo necesario usando la fórmula inversa:
+    // h1 = (Dmax / 2) * tan(aRad) * sin(π / N)
+    // tan(aRad) = h1 / ((Dmax / 2) * sin(π / N))
+    // aRad = atan(h1 / ((Dmax / 2) * sin(π / N)))
+    
+    const denominator = (state.Dmax / 2) * Math.sin(Math.PI / state.N);
+    const aRad_needed = Math.atan(h1_needed / denominator);
+    const aDeg_needed = (aRad_needed * 180) / Math.PI;
+
+    // Validar que el ángulo esté en rango válido
+    if (aDeg_needed < 0.1 || aDeg_needed > 89) {
+      this.showNotification('No se puede calcular un ángulo válido para esta altura', 'error');
+      return;
+    }
+
+    // Actualizar el estado y los controles
+    state.aDeg = aDeg_needed;
+    
+    // Actualizar los inputs de ángulo
+    if (this.aNum) this.aNum.value = aDeg_needed.toFixed(1);
+    if (this.aRange) this.aRange.value = aDeg_needed.toFixed(1);
+
+    // Actualizar badge
+    if (this.badgeAngle) {
+      this.badgeAngle.textContent = `${aDeg_needed.toFixed(1)}°`;
+    }
+
+    // Actualizar cálculos del estado
+    this.updateState();
+
+    // Reconstruir geometría
+    this.sceneManager.requestRebuild();
+    this.updateFacesCount();
+    this.updateGeometryInfo();
+
+    // Salir del modo edición
+    this.heightIndicator.classList.remove('editing');
+
+    // Mostrar mensaje de éxito
+    this.showNotification(`Altura ajustada a ${inputValue.toFixed(2)} m (α = ${aDeg_needed.toFixed(1)}°)`, 'success');
+
+    // Ocultar después de 3 segundos para ver el resultado
+    this.heightIndicatorTimer = setTimeout(() => {
+      this.hideHeightIndicator();
+    }, 3000);
   }
 
   openAdvancedPanel() {
