@@ -36,7 +36,7 @@ export class PDFReporter {
     await this.addFaceDetailPages(doc, technicalData);
 
     // Guardar PDF
-    const filename = `Reporte_Zonohedro_N${state.N}_a${state.aDeg.toFixed(1)}.pdf`;
+    const filename = `Reporte_Zonohedro_N${state.N}_a${state.aDeg.toFixed(2)}.pdf`;
     doc.save(filename);
     console.log('✅ Reporte PDF generado exitosamente');
   }
@@ -144,7 +144,7 @@ export class PDFReporter {
     currentY += lineHeight;
     doc.text(`N (Lados): ${data.N}`, startX + 5, currentY);
     currentY += lineHeight;
-    doc.text(`Ángulo α: ${data.aDeg.toFixed(1)}°`, startX + 5, currentY);
+    doc.text(`Ángulo α: ${data.aDeg.toFixed(2)}°`, startX + 5, currentY);
     currentY += lineHeight + 3;
 
     // Dimensiones
@@ -485,8 +485,8 @@ export class PDFReporter {
   static calculateCapAngle(cutLevel) {
     const { N, aDeg, h1 } = state;
 
-    // La normal de la tapa de corte apunta hacia abajo (0, 0, -1)
-    const capNormal = new THREE.Vector3(0, 0, -1);
+    // La normal de la tapa de corte apunta hacia arriba en sistema Y-up (0, 1, 0)
+    const capNormal = new THREE.Vector3(0, 1, 0);
 
     // Para calcular la normal del triángulo necesitamos sus vértices
     // Tomamos el triángulo representativo del nivel de corte
@@ -498,10 +498,15 @@ export class PDFReporter {
     const v1 = triangle.vertices[1];
     const v2 = triangle.vertices[2];
 
-    // Calcular normal del triángulo
+    // Calcular normal del triángulo (asegurar que apunte hacia afuera)
     const edge1 = new THREE.Vector3().subVectors(v1, v0);
     const edge2 = new THREE.Vector3().subVectors(v2, v0);
     const triangleNormal = new THREE.Vector3().crossVectors(edge1, edge2).normalize();
+
+    // Asegurar que la normal del triángulo apunte hacia afuera (componente Y positiva)
+    if (triangleNormal.y < 0) {
+      triangleNormal.negate();
+    }
 
     // Ángulo diedro entre la tapa y el triángulo
     const dotProduct = triangleNormal.dot(capNormal);

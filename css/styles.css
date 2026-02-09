@@ -441,6 +441,12 @@ body {
   font-weight: 700;
 }
 
+/* Ocultar badges de corte por defecto */
+#badgeLevels,
+#badgeHeight {
+  display: none;
+}
+
 .header-actions {
   display: flex;
   gap: 8px;
@@ -563,10 +569,10 @@ body.light-mode .icon-moon {
 
 /* Sección de parámetros */
 .params-section {
-  padding: 12px 16px;
+  padding: 8px 12px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
   max-height: 1000px;
   overflow: hidden;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
@@ -574,14 +580,14 @@ body.light-mode .icon-moon {
 
 .params-section.collapsed {
   max-height: 0;
-  padding: 0 16px;
+  padding: 0 12px;
   opacity: 0;
 }
 
 .param-control {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 3px;
 }
 
 .param-label {
@@ -600,13 +606,13 @@ body.light-mode .icon-moon {
 
 .param-number {
   width: 100%;
-  height: 38px;
-  padding: 0 12px;
+  height: 34px;
+  padding: 0 10px;
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid var(--border-medium);
-  border-radius: 10px;
+  border-radius: 8px;
   color: var(--text-primary);
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
   font-family: ui-monospace, 'SF Mono', Monaco, monospace;
   text-align: center;
@@ -686,8 +692,8 @@ body.light-mode .param-slider:hover {
 
 /* Sección de corte */
 .cut-section {
-  margin-top: 6px;
-  padding-top: 12px;
+  margin-top: 4px;
+  padding-top: 8px;
   border-top: 1px solid var(--border-subtle);
 }
 
@@ -808,7 +814,7 @@ body.light-mode .cut-slider {
 
 /* Info rápida */
 .quick-info {
-  padding: 12px 16px;
+  padding: 10px 12px;
   background: var(--surface-elevated);
   border-top: 1px solid var(--border-subtle);
   max-height: 500px;
@@ -818,24 +824,24 @@ body.light-mode .cut-slider {
 
 .quick-info.collapsed {
   max-height: 0;
-  padding: 0 16px;
+  padding: 0 12px;
   opacity: 0;
 }
 
 .info-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
+  gap: 8px;
 }
 
 .info-item {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
 }
 
 .info-label {
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 600;
   color: var(--text-tertiary);
   text-transform: uppercase;
@@ -843,7 +849,7 @@ body.light-mode .cut-slider {
 }
 
 .info-value {
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 700;
   font-family: ui-monospace, 'SF Mono', Monaco, monospace;
   color: var(--text-primary);
@@ -1264,8 +1270,8 @@ body.light-mode .speed-slider {
   }
 
   .params-section {
-    padding: 10px 12px;
-    gap: 10px;
+    padding: 8px 12px;
+    gap: 8px;
   }
 
   .param-label {
@@ -1399,48 +1405,50 @@ body.light-mode .speed-slider {
 
   /* Indicador de altura en móvil - más compacto */
   .height-indicator {
-    bottom: auto;
+    bottom: 80px;
     top: auto;
     right: 12px;
     left: 12px;
     min-width: auto;
-    padding: 10px 14px;
-    border-radius: 12px;
+    max-width: 280px;
+    margin: 0 auto;
+    padding: 8px 12px;
+    border-radius: 10px;
   }
 
   .height-indicator-label {
-    font-size: 9px;
-    margin-bottom: 4px;
+    font-size: 8px;
+    margin-bottom: 3px;
   }
 
   .height-indicator-input-wrapper {
-    gap: 6px;
-    margin-bottom: 4px;
+    gap: 4px;
+    margin-bottom: 3px;
   }
 
   .height-indicator-input {
-    font-size: 20px;
-    width: 80px;
+    font-size: 18px;
+    width: 70px;
     padding: 2px;
   }
 
   .height-indicator-unit {
-    font-size: 16px;
+    font-size: 14px;
   }
 
   .height-indicator-button {
-    width: 28px;
-    height: 28px;
+    width: 26px;
+    height: 26px;
   }
 
   .height-indicator-button svg {
-    width: 14px;
-    height: 14px;
+    width: 13px;
+    height: 13px;
   }
 
   .height-indicator-hint {
     font-size: 7px;
-    margin-top: 2px;
+    margin-top: 1px;
   }
 }
 

@@ -16,7 +16,7 @@ export class ShareManager {
   generateShareURL() {
     const params = new URLSearchParams({
       N: state.N,
-      a: state.aDeg.toFixed(1),
+      a: state.aDeg.toFixed(2),
       Dmax: state.Dmax.toFixed(2),
       cut: state.cutActive ? '1' : '0',
       cutLevel: state.cutLevel,
@@ -56,6 +56,14 @@ export class ShareManager {
     }
 
     updateStateCalculations();
+    
+    // Actualizar UI completa
+    this.uiManager.updateState();
+    this.uiManager.updateAllButtons();
+    this.uiManager.updateGeometryInfo();
+    this.uiManager.updateFacesCount();
+    this.sceneManager.requestRebuild();
+    
     return true;
   }
 
@@ -128,7 +136,7 @@ export class ShareManager {
     
     const a = document.createElement('a');
     a.href = url;
-    a.download = `zvaldivia-N${state.N}-a${state.aDeg.toFixed(1)}.json`;
+    a.download = `zvaldivia-N${state.N}-a${state.aDeg.toFixed(2)}.json`;
     a.click();
     
     URL.revokeObjectURL(url);

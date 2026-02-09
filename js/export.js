@@ -169,7 +169,7 @@ export class OBJExporter {
     const a = document.createElement('a');
     a.href = url;
     
-    let filename = `zome_D${state.Dmax.toFixed(1)}_N${state.N}_a${state.aDeg.toFixed(1)}`;
+    let filename = `zome_D${state.Dmax.toFixed(1)}_N${state.N}_a${state.aDeg.toFixed(2)}`;
     if (state.cutActive) {
       filename += `_cut${state.cutLevel}`;
     }

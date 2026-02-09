@@ -72,6 +72,8 @@ export class UIManager {
     this.badgeDiameter = document.getElementById('badgeDiameter');
     this.badgeLevels = document.getElementById('badgeLevels');
     this.badgeLevelsValue = document.getElementById('badgeLevelsValue');
+    this.badgeHeight = document.getElementById('badgeHeight');
+    this.badgeHeightValue = document.getElementById('badgeHeightValue');
 
     // Panel collapse controls
     this.toggleMainPanelBtn = document.getElementById('toggleMainPanelBtn');
@@ -334,8 +336,8 @@ export class UIManager {
     const nivelesVisibles = state.cutActive ? state.N - state.cutLevel : state.N;
     const alturaVisible = state.h1 * nivelesVisibles;
 
-    // Actualizar valor en el input
-    this.heightIndicatorInput.value = alturaVisible.toFixed(2);
+    // Actualizar valor en el input (3 decimales)
+    this.heightIndicatorInput.value = alturaVisible.toFixed(3);
 
     // Posicionar dinámicamente en móviles justo encima del control de ángulo
     if (window.innerWidth <= 640) {
@@ -445,12 +447,12 @@ export class UIManager {
     const maxHeight = maxH1 * nivelesVisibles;
 
     if (inputValue < minHeight) {
-      this.showNotification(`Altura muy pequeña. Mínimo: ${minHeight.toFixed(2)} m`, 'error');
+      this.showNotification(`Altura muy pequeña. Mínimo: ${minHeight.toFixed(3)} m`, 'error');
       return;
     }
 
     if (inputValue > maxHeight) {
-      this.showNotification(`Altura muy grande. Máximo: ${maxHeight.toFixed(2)} m`, 'error');
+      this.showNotification(`Altura muy grande. Máximo: ${maxHeight.toFixed(3)} m`, 'error');
       return;
     }
 
@@ -476,12 +478,12 @@ export class UIManager {
     state.aDeg = aDeg_needed;
     
     // Actualizar los inputs de ángulo
-    if (this.aNum) this.aNum.value = aDeg_needed.toFixed(1);
-    if (this.aRange) this.aRange.value = aDeg_needed.toFixed(1);
+    if (this.aNum) this.aNum.value = aDeg_needed.toFixed(2);
+    if (this.aRange) this.aRange.value = aDeg_needed.toFixed(2);
 
     // Actualizar badge
     if (this.badgeAngle) {
-      this.badgeAngle.textContent = `${aDeg_needed.toFixed(1)}°`;
+      this.badgeAngle.textContent = `${aDeg_needed.toFixed(2)}°`;
     }
 
     // Actualizar cálculos del estado
@@ -496,7 +498,7 @@ export class UIManager {
     this.heightIndicator.classList.remove('editing');
 
     // Mostrar mensaje de éxito
-    this.showNotification(`Altura ajustada a ${inputValue.toFixed(2)} m (α = ${aDeg_needed.toFixed(1)}°)`, 'success');
+    this.showNotification(`Altura ajustada a ${inputValue.toFixed(3)} m (α = ${aDeg_needed.toFixed(2)}°)`, 'success');
 
     // Ocultar después de 3 segundos para ver el resultado
     this.heightIndicatorTimer = setTimeout(() => {
@@ -527,7 +529,7 @@ export class UIManager {
   updateHeightDisplay() {
     const nivelesVisibles = state.cutActive ? (state.N - state.cutLevel) : state.N;
     const alturaVisible = state.h1 * nivelesVisibles;
-    if (this.infoH) this.infoH.textContent = alturaVisible.toFixed(2);
+    if (this.infoH) this.infoH.textContent = alturaVisible.toFixed(3);
   }
 
   // ✅ NUEVO: Toggle entre controles Dmax y diámetro del piso
@@ -538,9 +540,9 @@ export class UIManager {
       if (this.floorDiameterControl) this.floorDiameterControl.style.display = 'grid';
       
       // Actualizar valores del control de diámetro del piso
-      if (this.floorDiameterNum) this.floorDiameterNum.value = state.floorDiameter.toFixed(2);
+      if (this.floorDiameterNum) this.floorDiameterNum.value = state.floorDiameter.toFixed(3);
       if (this.floorDiameterRange) {
-        this.floorDiameterRange.value = state.floorDiameter.toFixed(2);
+        this.floorDiameterRange.value = state.floorDiameter.toFixed(3);
         this.floorDiameterRange.max = state.Dmax;
       }
     } else {
@@ -596,15 +598,14 @@ export class UIManager {
       this.badgeN.textContent = state.N;
     }
     if (this.badgeAngle) {
-      this.badgeAngle.textContent = `${state.aDeg.toFixed(1)}°`;
+      this.badgeAngle.textContent = `${state.aDeg.toFixed(2)}°`;
     }
     if (this.badgeDiameter) {
       if (state.cutActive) {
-        const Rk = (state.Dmax / 2) * Math.sin((state.cutLevel * Math.PI) / state.N);
-        const diameterCut = 2 * Rk;
-        this.badgeDiameter.textContent = `${diameterCut.toFixed(1)}m`;
+        // Usar el valor de floorDiameter que está en el state
+        this.badgeDiameter.textContent = `${state.floorDiameter.toFixed(3)}m`;
       } else {
-        this.badgeDiameter.textContent = `${state.Dmax.toFixed(1)}m`;
+        this.badgeDiameter.textContent = `${state.Dmax.toFixed(3)}m`;
       }
     }
     if (this.badgeLevels && this.badgeLevelsValue) {
@@ -615,6 +616,17 @@ export class UIManager {
         this.badgeLevelsValue.textContent = visibleLevels;
       } else {
         this.badgeLevels.style.display = 'none';
+      }
+    }
+    // Actualizar badge de altura total
+    if (this.badgeHeight && this.badgeHeightValue) {
+      if (state.cutActive) {
+        const nivelesVisibles = state.N - state.cutLevel;
+        const alturaVisible = state.h1 * nivelesVisibles;
+        this.badgeHeightValue.textContent = `${alturaVisible.toFixed(3)}m`;
+        this.badgeHeight.style.display = 'inline-flex';
+      } else {
+        this.badgeHeight.style.display = 'none';
       }
     }
   }
@@ -629,8 +641,8 @@ export class UIManager {
       state.Dmax = floorDiameter / sineFactor;
       
       // Actualizar los controles de Dmax (aunque estén ocultos)
-      if (this.dmaxNum) this.dmaxNum.value = state.Dmax.toFixed(2);
-      if (this.dmaxRange) this.dmaxRange.value = state.Dmax.toFixed(2);
+      if (this.dmaxNum) this.dmaxNum.value = state.Dmax.toFixed(3);
+      if (this.dmaxRange) this.dmaxRange.value = state.Dmax.toFixed(3);
       
       // Recalcular todo
       updateStateCalculations();
@@ -639,24 +651,22 @@ export class UIManager {
       this.updateHeightDisplay();
       
       if (this.infoH1) this.infoH1.textContent = state.h1.toFixed(3);
-      if (this.statusBadge) this.statusBadge.textContent = `N=${state.N} · α=${state.aDeg.toFixed(1)}°`;
+      if (this.statusBadge) this.statusBadge.textContent = `N=${state.N} · α=${state.aDeg.toFixed(2)}°`;
       this.updateGeometryInfo();
     }
   }
 
   updateGeometryInfo() {
-    const { N, Dmax, h1, cutActive, cutLevel, aRad } = state;
+    const { N, Dmax, h1, cutActive, cutLevel, aRad, floorDiameter } = state;
 
     // Calcular diámetro del polígono en el piso de corte
     if (cutActive) {
-      // Diámetro del polígono en el nivel de corte
-      const Rk = (Dmax / 2) * Math.sin((cutLevel * Math.PI) / N);
-      const diameterCut = 2 * Rk;
-      if (this.infoDiameter) this.infoDiameter.textContent = diameterCut.toFixed(2);
-      if (this.diameterLabel) this.diameterLabel.textContent = 'Diámetro piso';
+      // Mostrar el diámetro del piso que el usuario está controlando
+      if (this.infoDiameter) this.infoDiameter.textContent = floorDiameter.toFixed(3);
+      if (this.diameterLabel) this.diameterLabel.textContent = 'Ø piso';
     } else {
       // Mostrar Dmax cuando no hay corte
-      if (this.infoDiameter) this.infoDiameter.textContent = Dmax.toFixed(2);
+      if (this.infoDiameter) this.infoDiameter.textContent = Dmax.toFixed(3);
       if (this.diameterLabel) this.diameterLabel.textContent = 'Dmax';
     }
 
@@ -738,6 +748,24 @@ export class UIManager {
       if (this.nNum && this.nRange) this.nNum.value = this.nRange.value;
       if (this.aNum && this.aRange) this.aNum.value = this.aRange.value;
     }
+    
+    // Actualizar state temporalmente para cálculo de badges
+    const prevState = {
+      N: state.N,
+      aDeg: state.aDeg,
+      Dmax: state.Dmax
+    };
+    
+    if (this.nNum) state.N = parseInt(this.nNum.value);
+    if (this.aNum) state.aDeg = parseFloat(this.aNum.value);
+    if (this.dmaxNum) state.Dmax = parseFloat(this.dmaxNum.value);
+    
+    // Recalcular h1 temporalmente
+    state.aRad = (state.aDeg * Math.PI) / 180;
+    state.h1 = (state.Dmax / 2) * Math.tan(state.aRad) * Math.sin(Math.PI / state.N);
+    
+    // Actualizar badges inmediatamente
+    this.updateBadges();
   }
 
   // Realizar la sincronización completa con rebuild
@@ -776,6 +804,14 @@ export class UIManager {
       if (this.floorDiameterNum && this.floorDiameterRange) 
         this.floorDiameterNum.value = this.floorDiameterRange.value;
     }
+    
+    // Actualizar floorDiameter temporalmente para el badge
+    if (this.floorDiameterNum) {
+      state.floorDiameter = parseFloat(this.floorDiameterNum.value);
+    }
+    
+    // Actualizar badges inmediatamente
+    this.updateBadges();
   }
 
   // ✅ NUEVO: Realizar sincronización de diámetro del piso
@@ -828,9 +864,9 @@ export class UIManager {
       // ✅ NUEVO: Recalcular y actualizar diámetro del piso
       updateStateCalculations();
       
-      if (this.floorDiameterNum) this.floorDiameterNum.value = state.floorDiameter.toFixed(2);
+      if (this.floorDiameterNum) this.floorDiameterNum.value = state.floorDiameter.toFixed(3);
       if (this.floorDiameterRange) {
-        this.floorDiameterRange.value = state.floorDiameter.toFixed(2);
+        this.floorDiameterRange.value = state.floorDiameter.toFixed(3);
         this.floorDiameterRange.max = state.Dmax;
       }
       
@@ -952,12 +988,12 @@ export class UIManager {
    */
   updateAllButtons() {
     // Actualizar inputs
-    if (this.dmaxNum) this.dmaxNum.value = state.Dmax.toFixed(2);
-    if (this.dmaxRange) this.dmaxRange.value = state.Dmax.toFixed(2);
+    if (this.dmaxNum) this.dmaxNum.value = state.Dmax.toFixed(3);
+    if (this.dmaxRange) this.dmaxRange.value = state.Dmax.toFixed(3);
     if (this.nNum) this.nNum.value = state.N;
     if (this.nRange) this.nRange.value = state.N;
-    if (this.aNum) this.aNum.value = state.aDeg.toFixed(1);
-    if (this.aRange) this.aRange.value = state.aDeg.toFixed(1);
+    if (this.aNum) this.aNum.value = state.aDeg.toFixed(2);
+    if (this.aRange) this.aRange.value = state.aDeg.toFixed(2);
 
     // Faces
     if (this.facesBtn) {
