@@ -60,7 +60,7 @@ export class PDFReporter {
     // ✅ CORRECCIÓN: Calcular altura visible basada en niveles visibles
     const alturaVisible = h1 * nivelesVisibles;
 
-    // Lado del rombo (arista)
+    // Lado del rombo
     const k = 1;
     const Rk = (Dmax / 2) * Math.sin((k * Math.PI) / N);
     const step = (2 * Math.PI) / N;
@@ -120,7 +120,7 @@ export class PDFReporter {
     const imageXZ = await this.captureOrthographicView(scene, camera, renderer, 'xz');
 
     // Agregar imagen (lado izquierdo)
-    doc.addImage(imageXZ, 'PNG', 10, 30, 150, 150);
+    doc.addImage(imageXZ, 'JPEG', 10, 30, 150, 150);
 
     // Panel de datos técnicos (lado derecho)
     const startX = 170;
@@ -154,7 +154,7 @@ export class PDFReporter {
     doc.setFont(undefined, 'normal');
     doc.text(`Altura Total: ${data.Htotal.toFixed(2)} unidades`, startX + 5, currentY);
     currentY += lineHeight;
-    doc.text(`Arista (lado rombo): ${data.aristaRombo.toFixed(3)} unidades`, startX + 5, currentY);
+    doc.text(`Lado del rombo: ${data.aristaRombo.toFixed(3)} unidades`, startX + 5, currentY);
     currentY += lineHeight + 3;
 
     // Información del corte (si está activo)
@@ -212,7 +212,7 @@ export class PDFReporter {
     const imageXY = await this.captureOrthographicView(scene, camera, renderer, 'xy');
 
     // Agregar imagen centrada
-    doc.addImage(imageXY, 'PNG', 73, 40, 150, 150);
+    doc.addImage(imageXY, 'JPEG', 73, 40, 150, 150);
 
     // Footer
     doc.setFontSize(8);
@@ -273,13 +273,37 @@ export class PDFReporter {
       orthoCamera.up.set(0, 1, 0);
     }
 
-    // Renderizar con tamaño cuadrado
-    const renderSize = 2048;
+    // Renderizar con tamaño cuadrado (más liviano)
+    const renderSize = 1200;
+
+    // Guardar estado visual del renderer/scene
+    const originalOverride = scene.overrideMaterial;
+    const originalClear = renderer.getClearColor(new THREE.Color());
+    const originalClearAlpha = renderer.getClearAlpha();
+
+    // Estilo técnico: mantener el mismo look que a color (sólido),
+    // pero sin color. Para esto usamos un override sólido gris.
+    // (Las aristas/lines existentes se mantienen por separado.)
+    renderer.setClearColor(0xffffff, 1);
+    // Gris sólido (sin transparencia) para que se vea como la versión a color,
+    // pero sin color. Mantiene el sombreado (Lambert) para que las caras se lean bien.
+    scene.overrideMaterial = new THREE.MeshLambertMaterial({
+      color: 0xb8b8b8,
+      side: THREE.DoubleSide,
+      transparent: false,
+      opacity: 1.0,
+      depthWrite: true
+    });
+
     renderer.setSize(renderSize, renderSize);
     renderer.render(scene, orthoCamera);
 
-    // Capturar imagen
-    const imageData = renderer.domElement.toDataURL('image/png');
+    // Capturar imagen (JPEG más liviano)
+    const imageData = renderer.domElement.toDataURL('image/jpeg', 0.70);
+
+    // Restaurar override/clear
+    scene.overrideMaterial = originalOverride;
+    renderer.setClearColor(originalClear, originalClearAlpha);
 
     // Restaurar tamaño original
     renderer.setSize(originalSize.x, originalSize.y);
@@ -385,59 +409,155 @@ export class PDFReporter {
    * @param {number} level - Nivel de la cara
    * @returns {Array} - Ángulos diedros en grados para cada arista
    */
+
+  // ---------------------------------------------------------------------------
+  // Helpers geométricos (PDF técnico de caras)
+  // ---------------------------------------------------------------------------
+  static _computeModelCenter() {
+  try {
+    if (typeof rhombiData === 'undefined' || !Array.isArray(rhombiData) || rhombiData.length === 0) {
+      const z = (state && typeof state.h1 === 'number') ? state.h1 * 0.5 : 0;
+      return new THREE.Vector3(0, 0, z);
+    }
+    const sum = new THREE.Vector3(0, 0, 0);
+    let count = 0;
+    for (const ld of rhombiData) {
+      if (!ld || !Array.isArray(ld.rhombi)) continue;
+      for (const f of ld.rhombi) {
+        if (!f || !Array.isArray(f.vertices)) continue;
+        for (const v of f.vertices) {
+          if (v && typeof v.x === 'number') {
+            sum.add(v);
+            count++;
+          }
+        }
+      }
+    }
+    return count > 0 ? sum.multiplyScalar(1 / count) : new THREE.Vector3(0, 0, 0);
+  } catch (e) {
+    return new THREE.Vector3(0, 0, 0);
+  }
+}
+
+  static _getModelCenter() {
+    // cache a nivel de clase
+    if (!this._modelCenter) this._modelCenter = this._computeModelCenter();
+    return this._modelCenter;
+  }
+
+  static _orientedFaceNormal(vertices) {
+  const v0 = vertices[0];
+  const v1 = vertices[1];
+  const v2 = vertices[2];
+  const edge1 = new THREE.Vector3().subVectors(v1, v0);
+  const edge2 = new THREE.Vector3().subVectors(v2, v0);
+  const n = new THREE.Vector3().crossVectors(edge1, edge2).normalize();
+
+  // Orientar hacia afuera usando el centro del modelo
+  const c = new THREE.Vector3(0, 0, 0);
+  for (const v of vertices) c.add(v);
+  c.multiplyScalar(1 / vertices.length);
+
+  const center = this._getModelCenter();
+  const outward = new THREE.Vector3().subVectors(c, center);
+
+  if (outward.lengthSq() > 1e-12 && n.dot(outward) < 0) n.negate();
+  return n;
+}
+
   static calculateDihedralAngles(face, level) {
-    const { N } = state;
     const vertices = face.vertices;
     const angles = [];
 
-    // Calcular la normal de la cara actual
-    const v0 = vertices[0];
-    const v1 = vertices[1];
-    const v2 = vertices[2];
-    const edge1 = new THREE.Vector3().subVectors(v1, v0);
-    const edge2 = new THREE.Vector3().subVectors(v2, v0);
-    const currentNormal = new THREE.Vector3().crossVectors(edge1, edge2).normalize();
+    const clamp = (x) => Math.max(-1, Math.min(1, x));
 
-    // Para cada arista, encontrar la cara adyacente y calcular el ángulo diedro
+    // Normal de la cara actual orientada hacia afuera
+    const currentNormal = this._orientedFaceNormal(vertices);
+
+    // Plano del piso/tapa de corte: normal hacia afuera apunta hacia abajo (-Z).
+    // IMPORTANTE: cuando hay corte activo, el "piso" está en z = cutLevel*h1.
+    const capNormal = new THREE.Vector3(0, 0, -1);
+    const cutZ = state.cutActive ? (state.cutLevel * state.h1) : 0;
+    // En la geometría real puede haber pequeñas variaciones numéricas,
+    // por lo que usamos una tolerancia más permisiva.
+    const epsZ = 2e-3;
+
+    // En algunos casos (especialmente en la cara triangular del nivel de corte)
+    // el borde del piso no queda exactamente en z=0 por redondeos.
+    // Para ser robustos, detectamos el "mejor candidato" a borde del piso.
+    let capEdgeIndex = -1;
+    if (state.cutActive) {
+      // Solo intentar asociar con el piso si esta cara está cerca del plano de corte
+      let minZ = Infinity;
+      for (const v of vertices) minZ = Math.min(minZ, Math.abs(v.z - cutZ));
+      const faceNearCut = minZ < epsZ * 2;
+      if (!faceNearCut) {
+        // Mantener -1
+      } else {
+      let bestScore = Infinity;
+      for (let i = 0; i < vertices.length; i++) {
+        const a = vertices[i];
+        const b = vertices[(i + 1) % vertices.length];
+        const score = Math.abs(a.z - cutZ) + Math.abs(b.z - cutZ);
+        if (score < bestScore) {
+          bestScore = score;
+          capEdgeIndex = i;
+        }
+      }
+        // Si el mejor borde está demasiado lejos del plano de corte, no lo usamos
+        if (bestScore > epsZ * 2) capEdgeIndex = -1;
+      }
+    }
+
     for (let i = 0; i < vertices.length; i++) {
       const edgeStart = vertices[i];
       const edgeEnd = vertices[(i + 1) % vertices.length];
 
-      // Encontrar la cara adyacente que comparte esta arista
-      const adjacentFace = this.findAdjacentFace(edgeStart, edgeEnd, level, face);
-      
-      if (adjacentFace) {
-        // Calcular normal de la cara adyacente
-        const av0 = adjacentFace.vertices[0];
-        const av1 = adjacentFace.vertices[1];
-        const av2 = adjacentFace.vertices[2];
-        const aEdge1 = new THREE.Vector3().subVectors(av1, av0);
-        const aEdge2 = new THREE.Vector3().subVectors(av2, av0);
-        const adjacentNormal = new THREE.Vector3().crossVectors(aEdge1, aEdge2).normalize();
+      let adjacentFace = this.findAdjacentFace(edgeStart, edgeEnd, level, face);
 
-        // Calcular ángulo diedro usando las normales
-        // El ángulo diedro es π - ángulo entre normales (cuando apuntan hacia afuera)
-        const dotProduct = currentNormal.dot(adjacentNormal);
-        const angleRad = Math.acos(Math.max(-1, Math.min(1, dotProduct)));
-        const dihedralAngle = 180 - (angleRad * 180 / Math.PI);
-        // Dividir por 2 para obtener el ángulo desde el plano medio
-        angles.push(dihedralAngle / 2);
+      // Si hay corte activo y esta arista corresponde al plano de corte ("piso"),
+      // puede existir una cara adyacente geométricamente "debajo" del corte en los datos.
+      // En ese caso, el diedro relevante es con el plano del piso, no con la cara truncada.
+      if (state.cutActive) {
+        const isCapEdgeCandidate = (
+          (Math.abs(edgeStart.z - cutZ) < epsZ && Math.abs(edgeEnd.z - cutZ) < epsZ) ||
+          (i === capEdgeIndex)
+        );
+        if (isCapEdgeCandidate && adjacentFace) {
+          let maxZAdj = -Infinity;
+          for (const v of adjacentFace.vertices) maxZAdj = Math.max(maxZAdj, v.z);
+          if (maxZAdj < cutZ - epsZ) {
+            adjacentFace = null;
+          }
+        }
+      }
+
+      if (adjacentFace) {
+        const adjacentNormal = this._orientedFaceNormal(adjacentFace.vertices);
+        const angleRad = Math.acos(clamp(currentNormal.dot(adjacentNormal)));
+        const dihedralDeg = 180 - (angleRad * 180 / Math.PI);
+        angles.push(dihedralDeg / 2);
       } else {
-        // Si no hay cara adyacente (borde del corte o vértice superior/inferior)
-        // Calcular ángulo con geometría específica
-        if (face.isTriangle && i === 0) {
-          // Base del triángulo contra la tapa de corte
-          const capAngle = this.calculateCapAngle(level);
-          // Dividir por 2 para obtener el ángulo desde el plano medio
-          angles.push(capAngle / 2);
+        // Si hay corte activo, esta arista puede pertenecer al piso/tapa.
+        // Detectamos por z≈0 o por el candidato más cercano al plano.
+        const isCapEdge = state.cutActive && (
+          (Math.abs(edgeStart.z - cutZ) < epsZ && Math.abs(edgeEnd.z - cutZ) < epsZ) ||
+          (i === capEdgeIndex)
+        );
+
+        if (isCapEdge) {
+          const angleRad = Math.acos(clamp(currentNormal.dot(capNormal)));
+          const dihedralDeg = 180 - (angleRad * 180 / Math.PI);
+          angles.push(dihedralDeg / 2);
         } else {
-          angles.push(0); // Placeholder para aristas sin cara adyacente
+          angles.push(0);
         }
       }
     }
 
     return angles;
   }
+
 
   /**
    * Encuentra la cara adyacente que comparte una arista
@@ -480,41 +600,34 @@ export class PDFReporter {
   /**
    * Calcula el ángulo diedro entre la base del triángulo y la tapa de corte
    * @param {number} cutLevel - Nivel del corte
-   * @returns {number} - Ángulo en grados
+   * @returns {number} - Ángulo en grados (dividido por 2)
    */
-  static calculateCapAngle(cutLevel) {
-    const { N, aDeg, h1 } = state;
+  
+static calculateCapAngle(cutLevel) {
+    // Devuelve la MITAD del ángulo diedro REAL entre la cara triangular y el piso (tapa de corte),
+    // consistente con calculateDihedralAngles().
+    const clamp = (x) => Math.max(-1, Math.min(1, x));
+    const capNormal = new THREE.Vector3(0, 0, -1);
 
-    // La normal de la tapa de corte apunta hacia arriba en sistema Y-up (0, 1, 0)
-    const capNormal = new THREE.Vector3(0, 1, 0);
-
-    // Para calcular la normal del triángulo necesitamos sus vértices
-    // Tomamos el triángulo representativo del nivel de corte
     const cutLevelData = rhombiData.find(ld => ld.level === cutLevel);
-    if (!cutLevelData || cutLevelData.rhombi.length === 0) return 90;
+    if (!cutLevelData || !cutLevelData.rhombi || cutLevelData.rhombi.length === 0) return 45;
 
-    const triangle = cutLevelData.rhombi[0];
-    const v0 = triangle.vertices[0];
-    const v1 = triangle.vertices[1];
-    const v2 = triangle.vertices[2];
+    const tri = cutLevelData.rhombi[0];
+    const v0 = tri.vertices[0];
+    const v1 = tri.vertices[1];
+    const v2 = tri.vertices[2];
 
-    // Calcular normal del triángulo (asegurar que apunte hacia afuera)
     const edge1 = new THREE.Vector3().subVectors(v1, v0);
     const edge2 = new THREE.Vector3().subVectors(v2, v0);
-    const triangleNormal = new THREE.Vector3().crossVectors(edge1, edge2).normalize();
+    let n = new THREE.Vector3().crossVectors(edge1, edge2).normalize();
 
-    // Asegurar que la normal del triángulo apunte hacia afuera (componente Y positiva)
-    if (triangleNormal.y < 0) {
-      triangleNormal.negate();
-    }
+    if (n.z > 0) n.negate();
 
-    // Ángulo diedro entre la tapa y el triángulo
-    const dotProduct = triangleNormal.dot(capNormal);
-    const angleRad = Math.acos(Math.max(-1, Math.min(1, dotProduct)));
-    const dihedralAngle = 180 - (angleRad * 180 / Math.PI);
-
-    return dihedralAngle;
+    const angleRad = Math.acos(clamp(n.dot(capNormal)));
+    const dihedralDeg = 180 - (angleRad * 180 / Math.PI);
+    return dihedralDeg / 2;
   }
+
 
   /**
    * Genera páginas con detalles de cada tipo de cara
@@ -623,7 +736,7 @@ export class PDFReporter {
     doc.setFont(undefined, 'normal');
     dihedralAngles.forEach((angle, i) => {
       if (angle > 0) {
-        doc.text(`Arista ${i + 1}: ${angle.toFixed(2)}°`, startX + 2, currentY);
+        doc.text(`Lado ${i + 1}: ${angle.toFixed(2)}°`, startX + 2, currentY);
         currentY += lineHeight;
       }
     });

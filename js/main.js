@@ -2,6 +2,8 @@ import { SceneManager } from './scene.js';
 import { UIManager } from './ui.js';
 import { OBJExporter } from './export.js';
 import { PDFReporter } from './pdf-report.js';
+import { NodePDFReporter } from './node-pdf-report.js';
+import { BeamPDFReporter } from './beam-pdf-report.js';
 import { ShareManager } from './share.js';
 import { state, rhombiData } from './state.js';
 
@@ -36,6 +38,8 @@ class App {
     // Configurar botones de exportación
     this.setupExportButton();
     this.setupPDFButton();
+    this.setupNodePDFButton();
+    this.setupBeamsPDFButton();
     
     // Configurar botones de compartir
     this.setupShareButtons();
@@ -61,6 +65,56 @@ class App {
       setTimeout(resolve, 1500);
     });
   }
+
+  setupNodePDFButton() {
+    const exportNodePdfBtn = document.getElementById('exportNodePdfBtn');
+    if (exportNodePdfBtn) {
+      exportNodePdfBtn.addEventListener('click', async () => {
+        if (!state.rhombiVisible || rhombiData.length === 0) {
+          this.uiManager.showNotification('Debes activar las caras primero para generar el PDF de nodos');
+          return;
+        }
+
+        this.uiManager.showNotification('Generando PDF de nodos...', 'info');
+        await new Promise(resolve => setTimeout(resolve, 300));
+
+        try {
+          await NodePDFReporter.generateNodeReport();
+          this.uiManager.showNotification('PDF de nodos generado exitosamente', 'success');
+        } catch (error) {
+          console.error('Error generando PDF de nodos:', error);
+          this.uiManager.showNotification('Error generando PDF de nodos', 'error');
+        }
+      });
+    }
+  }
+
+  setupBeamsPDFButton() {
+    const exportBeamsPdfBtn = document.getElementById('exportBeamsPdfBtn');
+    if (exportBeamsPdfBtn) {
+      exportBeamsPdfBtn.addEventListener('click', async () => {
+        // Requiere que la estructura exista (generada al menos una vez)
+        const sg = this.sceneManager?.structureGroup;
+        const hasStructure = sg && sg.children && sg.children.length > 0;
+        if (!hasStructure) {
+          this.uiManager.showNotification('Debes generar la estructura primero para crear el PDF de vigas', 'error');
+          return;
+        }
+
+        this.uiManager.showNotification('Generando PDF de vigas...', 'info');
+        await new Promise(r => setTimeout(r, 250));
+
+        try {
+          await BeamPDFReporter.generateBeamsReport(sg);
+          this.uiManager.showNotification('PDF de vigas generado exitosamente', 'success');
+        } catch (error) {
+          console.error('Error generando PDF de vigas:', error);
+          this.uiManager.showNotification('Error generando PDF de vigas', 'error');
+        }
+      });
+    }
+  }
+
 
   async hideLoadingScreen() {
     const loadingScreen = document.getElementById('loadingScreen');

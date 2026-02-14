@@ -10,6 +10,8 @@ import {
   createCutCap
 } from './geometry.js';
 import { setRhombiData, clearRhombiData } from './state.js';
+import { StructureGenerator } from './structure-generator.js';
+import { StructureOBJExporter } from './export.js';
 
 /**
  * Configuración de la escena Three.js con optimizaciones de performance
@@ -158,14 +160,21 @@ export class SceneManager {
     this.axisGroup = new THREE.Group();
     this.capGroup = new THREE.Group();
 
+    // Estructura para conectores (cilindros + vigas)
+    this.structureGroup = new THREE.Group();
+
     this.mainGroup.add(this.polygonsGroup);
     this.mainGroup.add(this.helixGroup);
     this.mainGroup.add(this.rhombiGroup);
     this.mainGroup.add(this.edgesGroup);
     this.mainGroup.add(this.axisGroup);
     this.mainGroup.add(this.capGroup);
+    this.mainGroup.add(this.structureGroup);
 
     this.scene.add(this.mainGroup);
+
+    this.structureGenerator = new StructureGenerator(this.structureGroup);
+    this._structureSignature = null;
   }
 
   setupHelpers() {
@@ -277,7 +286,7 @@ export class SceneManager {
    */
   rebuildSceneLazy() {
     // Primero limpiamos y construimos lo básico (rápido)
-    this.clearGroups();
+    this.clearGroups({ includeStructure: false });
     clearRhombiData();
 
     const { N, cutActive, cutLevel, h1 } = state;
@@ -297,6 +306,9 @@ export class SceneManager {
     if (state.axisVisible) {
       createAxisAndPoints(this.axisGroup, this.geomPoint, this.matPoint);
     }
+
+    // Mantener/actualizar estructura (independiente de caras/líneas)
+    this.maybeUpdateStructure();
 
     // Actualizar iluminación
     this.updateLighting();
@@ -352,7 +364,7 @@ export class SceneManager {
    * Reconstrucción normal (síncrona) para N pequeños
    */
   rebuildScene() {
-    this.clearGroups();
+    this.clearGroups({ includeStructure: false });
     clearRhombiData();
 
     const { N, cutActive, cutLevel, h1 } = state;
@@ -391,20 +403,98 @@ export class SceneManager {
       createAxisAndPoints(this.axisGroup, this.geomPoint, this.matPoint);
     }
 
-    // 6) Actualizar iluminación según el modo
+    // 6) Mantener/actualizar estructura (independiente de caras/líneas)
+    this.maybeUpdateStructure();
+
+    // 7) Actualizar iluminación según el modo
     this.updateLighting();
   }
 
-  /**
-   * Limpia todos los grupos correctamente
+    /**
+   * Limpia los grupos de geometría base.
+   * ⚠️ Por defecto NO toca la estructura, para que no desaparezca al activar/desactivar caras/líneas/polígonos.
    */
-  clearGroups() {
+  clearGroups({ includeStructure = false } = {}) {
     this.clearGroup(this.polygonsGroup);
     this.clearGroup(this.helixGroup);
     this.clearGroup(this.rhombiGroup);
     this.clearGroup(this.edgesGroup);
     this.clearGroup(this.axisGroup);
     this.clearGroup(this.capGroup);
+
+    if (includeStructure) {
+      this.clearGroup(this.structureGroup);
+    }
+  }
+
+  /**
+   * Firma estable para decidir si la estructura debe regenerarse
+   */
+  getStructureSignature(params) {
+    const p = params || null;
+    const s = state;
+    return JSON.stringify({
+      // Geometría del zonohedro (lo que cambia posiciones)
+      N: s.N,
+      Dmax: s.Dmax,
+      aDeg: s.aDeg,
+      cutActive: !!s.cutActive,
+      cutLevel: s.cutLevel,
+      // Parámetros de estructura
+      p,
+    });
+  }
+
+  /**
+   * Si el usuario tiene la estructura activada, la mantiene / regenera cuando cambia la geometría.
+   */
+  maybeUpdateStructure() {
+    if (!state.structureVisible) return;
+    if (!state.structureParams) return;
+
+    const sig = this.getStructureSignature(state.structureParams);
+    if (this._structureSignature !== sig || this.structureGroup.children.length === 0) {
+      this.generateConnectorStructure(state.structureParams, { _fromAutoUpdate: true });
+      this._structureSignature = sig;
+    }
+  }
+
+
+  /**
+   * Genera la estructura de vigas + conectores en la escena.
+   * Se auto-actualiza cuando cambia N / corte / Dmax (mientras esté activada).
+   */
+  generateConnectorStructure(params, { _fromAutoUpdate = false } = {}) {
+    if (!this.structureGenerator) {
+      this.structureGenerator = new StructureGenerator(this.structureGroup);
+    }
+
+    // Guardar params para auto-actualización
+    state.structureParams = { ...params };
+    this._structureSignature = this.getStructureSignature(state.structureParams);
+
+    this.structureGenerator.clear();
+    this.structureGenerator.generate(params);
+    // Respetar toggle visible
+    this.structureGroup.visible = !!state.structureVisible;
+  }
+
+  /**
+   * Activa/Desactiva visualmente la estructura (sin borrarla)
+   */
+  setStructureVisible(visible) {
+    state.structureVisible = !!visible;
+    this.structureGroup.visible = !!visible;
+  }
+
+  /**
+   * Exporta un OBJ con SOLO la estructura (vigas + conectores cilíndricos)
+   */
+  exportConnectorStructureOBJ() {
+    if (!this.structureGroup || this.structureGroup.children.length === 0) {
+      throw new Error('No hay estructura generada');
+    }
+    StructureOBJExporter.exportStructureToOBJ(this.structureGroup);
   }
 
   /**

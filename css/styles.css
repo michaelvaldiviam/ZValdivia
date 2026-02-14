@@ -778,6 +778,46 @@ body.light-mode .cut-slider {
   filter: brightness(1.1);
 }
 
+/* Mini formulario (estructura para conectores) */
+.mini-form {
+  display: flex;
+  flex-direction: column;
+}
+
+.mini-form-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mini-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+
+.mini-input-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.mini-input-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.mini-input-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.mini-form .param-number {
+  height: 36px;
+}
+
 .cut-button {
   border-color: rgba(239, 68, 68, 0.3);
   background: rgba(239, 68, 68, 0.1);

@@ -1,5 +1,5 @@
 export const state = {
-  Dmax: 10,
+  Dmax: 6.596,
   N: 11,
   aDeg: 39.8,
   aRad: 0,
@@ -14,7 +14,11 @@ export const state = {
   rotationSpeed: 0.3,
   cutActive: true,
   cutLevel: 4,
-  floorDiameter: 0,
+  floorDiameter: 6,
+  // Estructura (vigas + conectores)
+  structureVisible: true,
+  structureParams: null, // {cylDiameterMm,cylDepthMm,beamWidthMm,beamHeightMm}
+
 };
 
 export let rhombiData = [];

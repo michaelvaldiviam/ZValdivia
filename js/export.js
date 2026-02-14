@@ -188,3 +188,118 @@ export class OBJExporter {
     }
   }
 }
+
+/**
+ * Exporta SOLO la estructura de conectores (cilindros + vigas) a OBJ.
+ *
+ * Nota:
+ * - Las vigas se exportan como QUADS (6 caras) usando metadata guardada en userData.
+ * - Los cilindros se exportan tal como están en THREE (triangulación de la geometría).
+ */
+export class StructureOBJExporter {
+  /**
+   * @param {THREE.Group} structureGroup
+   */
+  static exportStructureToOBJ(structureGroup) {
+    if (!structureGroup) throw new Error('No structure group');
+    if (!structureGroup.children || structureGroup.children.length === 0) {
+      throw new Error('Structure is empty');
+    }
+
+    structureGroup.updateMatrixWorld(true);
+
+    let obj = '# ZValdivia - Connector Structure OBJ\n';
+    obj += `# Generated: ${new Date().toISOString()}\n`;
+    obj += `# Parameters: Dmax=${state.Dmax}, N=${state.N}, a=${state.aDeg}deg\n`;
+    if (state.cutActive) obj += `# Cut active at K=${state.cutLevel}\n`;
+    obj += '\n';
+
+    let vOffset = 1; // OBJ 1-based
+    let meshCounter = 0;
+
+    structureGroup.traverse((child) => {
+      if (!child || !child.isMesh) return;
+      const mesh = child;
+      const name = (mesh.name && mesh.name.trim()) ? mesh.name : `mesh_${meshCounter++}`;
+      obj += `o ${name}\n`;
+      obj += `g ${name}\n`;
+
+      // --- Vertices ---
+      const verts = [];
+      const hasBeamQuads = Array.isArray(mesh.userData?.objQuads) && Array.isArray(mesh.userData?.objVertices);
+      if (hasBeamQuads) {
+        // Viga: 8 vertices definidos por el generador
+        for (const v of mesh.userData.objVertices) {
+          const p = v.clone().applyMatrix4(mesh.matrixWorld);
+          verts.push(p);
+        }
+      } else {
+        const pos = mesh.geometry?.attributes?.position;
+        if (!pos) return;
+        for (let i = 0; i < pos.count; i++) {
+          const p = new THREE.Vector3().fromBufferAttribute(pos, i).applyMatrix4(mesh.matrixWorld);
+          verts.push(p);
+        }
+      }
+
+      for (const p of verts) {
+        obj += `v ${p.x.toFixed(6)} ${p.y.toFixed(6)} ${p.z.toFixed(6)}\n`;
+      }
+      obj += '\n';
+
+      // --- Faces ---
+      if (hasBeamQuads) {
+        // 6 caras QUAD
+        for (const q of mesh.userData.objQuads) {
+          const a = vOffset + q[0];
+          const b = vOffset + q[1];
+          const c = vOffset + q[2];
+          const d = vOffset + q[3];
+          obj += `f ${a} ${b} ${c} ${d}\n`;
+        }
+        obj += '\n';
+        vOffset += verts.length;
+        return;
+      }
+
+      // Triangulación (CylinderGeometry u otras)
+      const geom = mesh.geometry;
+      const idx = geom?.index;
+      if (idx && idx.count >= 3) {
+        for (let i = 0; i < idx.count; i += 3) {
+          const a = vOffset + idx.getX(i);
+          const b = vOffset + idx.getX(i + 1);
+          const c = vOffset + idx.getX(i + 2);
+          obj += `f ${a} ${b} ${c}\n`;
+        }
+        obj += '\n';
+        vOffset += verts.length;
+        return;
+      }
+
+      // No indexed: asumir tríos consecutivos
+      for (let i = 0; i + 2 < verts.length; i += 3) {
+        obj += `f ${vOffset + i} ${vOffset + i + 1} ${vOffset + i + 2}\n`;
+      }
+      obj += '\n';
+      vOffset += verts.length;
+    });
+
+    this._downloadOBJ(obj);
+  }
+
+  static _downloadOBJ(content) {
+    const blob = new Blob([content], { type: 'application/octet-stream' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    let filename = `structure_D${state.Dmax.toFixed(1)}_N${state.N}_a${state.aDeg.toFixed(2)}`;
+    if (state.cutActive) filename += `_cut${state.cutLevel}`;
+    filename += '.obj';
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+}

@@ -47,6 +47,16 @@ export class UIManager {
     this.toggleAxisBtn = document.getElementById('toggleAxisBtn');
     this.rotationBtn = document.getElementById('rotationBtn');
 
+    // Estructura para conectores
+    this.connCylDiameterMm = document.getElementById('connCylDiameterMm');
+    this.connCylDepthMm = document.getElementById('connCylDepthMm');
+    // Viga: "Alto" (crece hacia el interior) y "Ancho" (pasa por la arista)
+    this.beamHeightMm = document.getElementById('beamHeightMm');
+    this.beamWidthMm = document.getElementById('beamWidthMm');
+    this.generateStructureBtn = document.getElementById('generateStructureBtn');
+    this.toggleStructureVisible = document.getElementById('toggleStructureVisible');
+    this.exportStructureObjBtn = document.getElementById('exportStructureObjBtn');
+
     // Cut plane control
     this.cutBtn = document.getElementById('cutBtn');
     this.cutControls = document.getElementById('cutControls');
@@ -216,6 +226,26 @@ export class UIManager {
     // Info panel toggle (solo móvil)
     if (this.toggleInfoBtn) 
       this.toggleInfoBtn.addEventListener('click', () => this.toggleInfo());
+
+    // Estructura para conectores
+    if (this.generateStructureBtn) {
+      this.generateStructureBtn.addEventListener('click', () => this.handleGenerateStructure());
+    }
+
+    if (this.toggleStructureVisible) {
+      this.toggleStructureVisible.addEventListener('change', (e) => {
+        const isOn = !!e.target.checked;
+        try {
+          this.sceneManager.setStructureVisible(isOn);
+        } catch (err) {
+          console.error(err);
+        }
+      });
+    }
+
+    if (this.exportStructureObjBtn) {
+      this.exportStructureObjBtn.addEventListener('click', () => this.handleExportStructureOBJ());
+    }
 
     // Main panel collapse toggle
     if (this.toggleMainPanelBtn)
@@ -633,7 +663,7 @@ export class UIManager {
 
   // ✅ NUEVO: Actualizar Dmax desde el diámetro del piso
   updateDmaxFromFloorDiameter() {
-    const floorDiameter = Math.max(0.1, parseFloat(this.floorDiameterNum?.value) || 5);
+    const floorDiameter = Math.max(0.1, parseFloat(this.floorDiameterNum?.value) || 6);
     
     const sineFactor = Math.sin((state.cutLevel * Math.PI) / state.N);
     
@@ -981,6 +1011,52 @@ export class UIManager {
   updateRotationSpeed(e) {
     const speedValue = parseFloat(e.target.value);
     state.rotationSpeed = speedValue / 100;
+  }
+
+  /**
+   * Genera la estructura de vigas + conectores en la escena
+   */
+  handleGenerateStructure() {
+    const cylDiameterMm = Number(this.connCylDiameterMm?.value || 0);
+    const cylDepthMm = Number(this.connCylDepthMm?.value || 0);
+    const beamHeightMm = Number(this.beamHeightMm?.value || 0);
+    const beamWidthMm = Number(this.beamWidthMm?.value || 0);
+
+    if (!cylDiameterMm || !cylDepthMm || !beamHeightMm || !beamWidthMm) {
+      this.showNotification('Ingresa diámetro/profundidad del conector y alto/ancho de la viga (mm).', 'error');
+      return;
+    }
+
+    try {
+      this.sceneManager.generateConnectorStructure({
+        cylDiameterMm,
+        cylDepthMm,
+        beamHeightMm,
+        beamWidthMm,
+      });
+      // Por defecto, dejar visible al generar
+      try {
+        this.sceneManager.setStructureVisible(true);
+        if (this.toggleStructureVisible) this.toggleStructureVisible.checked = true;
+      } catch (_) {}
+      this.showNotification('Estructura generada. Se actualizará automáticamente al cambiar parámetros del zonohedro mientras esté activa.', 'success');
+    } catch (err) {
+      console.error(err);
+      this.showNotification('No se pudo generar la estructura. Revisa la consola para detalles.', 'error');
+    }
+  }
+
+  /**
+   * Descarga un OBJ solo de la estructura (vigas + conectores)
+   */
+  handleExportStructureOBJ() {
+    try {
+      this.sceneManager.exportConnectorStructureOBJ();
+      this.showNotification('OBJ de estructura descargado.', 'success');
+    } catch (err) {
+      console.error(err);
+      this.showNotification('No se pudo exportar la estructura. Genera la estructura primero.', 'error');
+    }
   }
 
     /**
