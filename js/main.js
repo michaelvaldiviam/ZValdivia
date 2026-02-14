@@ -105,7 +105,7 @@ class App {
         await new Promise(r => setTimeout(r, 250));
 
         try {
-          await BeamPDFReporter.generateBeamsReport(sg);
+          await BeamPDFReporter.generateBeamsReport(sg, this.sceneManager);
           this.uiManager.showNotification('PDF de vigas generado exitosamente', 'success');
         } catch (error) {
           console.error('Error generando PDF de vigas:', error);

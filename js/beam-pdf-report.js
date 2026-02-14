@@ -13,7 +13,7 @@ import { state } from './state.js';
  * - Graduación desde el extremo izquierdo = 0 hacia la derecha, en mm sin decimales.
  */
 export class BeamPDFReporter {
-  static async generateBeamsReport(structureGroup) {
+  static async generateBeamsReport(structureGroup, sceneManager = null) {
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
 
@@ -26,7 +26,7 @@ export class BeamPDFReporter {
 
     for (let i = 0; i < beams.length; i++) {
       doc.addPage();
-      this._addBeamPage(doc, beams[i], i + 1);
+      await this._addBeamPage(doc, beams[i], i + 1, sceneManager);
     }
 
     const filename = `Vigas_ZValdivia_N${state.N}_a${state.aDeg.toFixed(2)}.pdf`;
@@ -117,7 +117,7 @@ export class BeamPDFReporter {
     doc.text('Chile', 24, y);
   }
 
-  static _addBeamPage(doc, item, pageIndex) {
+  static async _addBeamPage(doc, item, pageIndex, sceneManager) {
     const margin = 14;
     const x0 = margin;
     const y0 = margin;
@@ -173,9 +173,10 @@ export class BeamPDFReporter {
     const rightAng = leftRight.rightKey === 'a' ? aAng : bAng;
 
     // Layout de vistas
-    const mainBox = { x: 14, y: 34, w: 132, h: 72 };
-    const isoBox = { x: 152, y: 34, w: 44, h: 44 };
-    const sideBox = { x: 14, y: 118, w: 182, h: 62 };
+    const mainBox = { x: 14, y: 42, w: 132, h: 72 };
+    const isoBox = { x: 152, y: 42, w: 44, h: 44 };
+    const zomeBox = { x: 152, y: 92, w: 44, h: 36 };
+    const sideBox = { x: 14, y: 132, w: 182, h: 60 };
 
     // Vista principal: planta (Largo x Ancho) con biseles visibles (líneas ocultas en discontinua)
     this._drawBeamPlanBevel(doc, vertsW, basis, {
@@ -189,6 +190,16 @@ export class BeamPDFReporter {
 
     // Vista isométrica (sin ocultas)
     this._drawBeamIsometric(doc, vertsW, basis, isoBox, { leftLabel, rightLabel });
+
+
+    // Vista vertical del zome (igual al PDF de rombos) + flecha indicando el nivel
+    if (sceneManager && sceneManager.scene && sceneManager.renderer) {
+      await this._drawZomeVerticalView(doc, sceneManager, zomeBox, item, vertsW);
+    } else {
+      // Fallback: solo etiqueta si no hay escena disponible
+      doc.setFontSize(9);
+      doc.text(`Nivel: k${item.kVisible}`, zomeBox.x, zomeBox.y + 4);
+    }
 
     // Vista lateral: e vs t
     this._drawBeamView(doc, vertsW, basis, {
@@ -356,7 +367,8 @@ static _edges() {
     // Título
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(10);
-    doc.text(title, box.x, box.y - 3);
+    // Un poco más arriba para evitar que choque con las etiquetas (kX y Ang(d))
+    doc.text(title, box.x, box.y - 6);
 
     // --- Break dinámico (vista rota) ---
     // El ángulo del bisel afecta cuánto "corre" la testa en u. Estimamos ese avance usando
@@ -458,13 +470,14 @@ static _edges() {
     // Etiquetas de conectores + Ang(d) en extremos
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
-    doc.text(String(leftLabel || ''), box.x, box.y - 1, { align: 'left' });
-    doc.text(String(rightLabel || ''), box.x + box.w, box.y - 1, { align: 'right' });
+    // Bajar las etiquetas ligeramente para separar del título
+    doc.text(String(leftLabel || ''), box.x, box.y + 0.5, { align: 'left' });
+    doc.text(String(rightLabel || ''), box.x + box.w, box.y + 0.5, { align: 'right' });
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
-    if (Number.isFinite(leftAng)) doc.text(`Ang(d) ${leftAng.toFixed(1)}°`, box.x, box.y + 3, { align: 'left' });
-    if (Number.isFinite(rightAng)) doc.text(`Ang(d) ${rightAng.toFixed(1)}°`, box.x + box.w, box.y + 3, { align: 'right' });
+    if (Number.isFinite(leftAng)) doc.text(`Ang(d) ${leftAng.toFixed(1)}°`, box.x, box.y + 4.5, { align: 'left' });
+    if (Number.isFinite(rightAng)) doc.text(`Ang(d) ${rightAng.toFixed(1)}°`, box.x + box.w, box.y + 4.5, { align: 'right' });
   }
 
   
@@ -494,18 +507,19 @@ static _edges() {
     // Título
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(10);
-    doc.text(title, box.x, box.y - 3);
+    // Un poco más arriba para no... 
+    doc.text(title, box.x, box.y - 6);
 
     // Labels + Ang(d)
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
-    if (leftLabel) doc.text(String(leftLabel), box.x, box.y - 1, { align: 'left' });
-    if (rightLabel) doc.text(String(rightLabel), box.x + box.w, box.y - 1, { align: 'right' });
+    if (leftLabel) doc.text(String(leftLabel), box.x, box.y + 0.5, { align: 'left' });
+    if (rightLabel) doc.text(String(rightLabel), box.x + box.w, box.y + 0.5, { align: 'right' });
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
-    if (Number.isFinite(leftAng)) doc.text(`Ang(d) ${leftAng.toFixed(1)}°`, box.x, box.y + 3, { align: 'left' });
-    if (Number.isFinite(rightAng)) doc.text(`Ang(d) ${rightAng.toFixed(1)}°`, box.x + box.w, box.y + 3, { align: 'right' });
+    if (Number.isFinite(leftAng)) doc.text(`Ang(d) ${leftAng.toFixed(1)}°`, box.x, box.y + 4.5, { align: 'left' });
+    if (Number.isFinite(rightAng)) doc.text(`Ang(d) ${rightAng.toFixed(1)}°`, box.x + box.w, box.y + 4.5, { align: 'right' });
 
     // --- Break (acortar cuerpo) ---
         // --- Break dinámico según bisel (vista) ---
@@ -654,6 +668,150 @@ static _drawBeamIsometric(doc, vertsW, basis, box, opts = {}) {
       const b = map(pts2[i1]);
       doc.line(a.X, a.Y, b.X, b.Y);
     }
+  }
+  static async _drawZomeVerticalView(doc, sceneManager, box, item, vertsW) {
+    // Misma vista vertical (ortográfica) usada en el PDF de rombos, pero insertada aquí
+    // y con una flecha que marca el nivel al que pertenece la viga.
+
+    // Recuadro (se mantiene, tal como se solicitó)
+    doc.setDrawColor(120);
+    doc.setLineWidth(0.2);
+    doc.rect(box.x, box.y, box.w, box.h);
+
+    // Captura ortográfica lateral (XZ)
+    const img = await this._captureZomeOrthoXZ(sceneManager);
+
+    // Insertar imagen (no transparente, fondo blanco)
+    doc.addImage(img, 'JPEG', box.x, box.y, box.w, box.h);
+
+    // Determinar altura (Z) representativa del NIVEL de la viga.
+    // Importante: como las testas son biseladas, el centro geométrico no coincide necesariamente con
+    // el plano de unión con el conector. Para que la flecha caiga en el nivel correcto, cuantizamos
+    // cada extremo al múltiplo más cercano de h1 (altura entre niveles) y luego tomamos el punto medio.
+    if (!Array.isArray(vertsW) || vertsW.length !== 8) return;
+
+    const cA = new THREE.Vector3();
+    const cB = new THREE.Vector3();
+    for (let i = 0; i < 4; i++) cA.add(vertsW[i]);
+    for (let i = 4; i < 8; i++) cB.add(vertsW[i]);
+    cA.multiplyScalar(1 / 4);
+    cB.multiplyScalar(1 / 4);
+
+    const beamInfo = item?.mesh?.userData?.beamInfo || {};
+    const h1 = Math.max(1e-9, state.h1);
+    const parseKName = (s) => {
+      const m = /k(\d+)/i.exec(String(s || ''));
+      return m ? Number(m[1]) : NaN;
+    };
+
+    // Preferimos el nombre de conector (k#) porque ya sigue la lógica visible del usuario.
+    const kNameA = parseKName(beamInfo?.a?.name);
+    const kNameB = parseKName(beamInfo?.b?.name);
+
+    // Fallback por Z del nodo (pos del conector) y, si no existe, por centroides de la viga.
+    const zNodeA = beamInfo?.a?.pos?.z;
+    const zNodeB = beamInfo?.b?.pos?.z;
+
+    const kA = Number.isFinite(kNameA) ? kNameA : (Number.isFinite(zNodeA) ? Math.round(zNodeA / h1) : Math.round(cA.z / h1));
+    const kB = Number.isFinite(kNameB) ? kNameB : (Number.isFinite(zNodeB) ? Math.round(zNodeB / h1) : Math.round(cB.z / h1));
+
+    const kLo = Math.min(kA, kB);
+    const kHi = Math.max(kA, kB);
+
+    // Si ambos extremos están en el mismo nivel (ej: viga del piso con corte activo), apuntamos a ese nivel.
+    // Si no, apuntamos al punto medio entre niveles para indicar “entre kLo y kHi”.
+    const zMark = (kLo === kHi) ? (kLo * h1) : (0.5 * ((kLo + kHi) * h1));
+    if (!Number.isFinite(zMark)) return;
+
+    const levelLabel = (kLo === kHi) ? `k${kLo}` : `k${kLo} <-> k${kHi}`;
+
+    // Mapear zMark al sistema de la cámara ortográfica usada en la captura
+    const nivelesVisibles = state.cutActive ? (state.N - state.cutLevel) : state.N;
+    const alturaVisible = state.h1 * nivelesVisibles;
+    const frustumSize = state.Dmax * 1.5;
+    const zCenter = alturaVisible / 2;
+    const zMin = zCenter - frustumSize / 2;
+    const zMax = zCenter + frustumSize / 2;
+
+    const t = (zMark - zMin) / Math.max(1e-9, (zMax - zMin));
+    const tClamped = Math.max(0, Math.min(1, t));
+    const y = box.y + (1 - tClamped) * box.h;
+
+    // Flecha (derecha -> izquierda)
+    const xTail = box.x + box.w - 1.5;
+    const xHead = box.x + box.w * 0.62;
+    doc.setDrawColor(0);
+    doc.setLineWidth(0.4);
+    doc.line(xTail, y, xHead, y);
+
+    // Cabeza de flecha
+    const ah = 2.2;
+    doc.line(xHead, y, xHead + ah, y - ah * 0.7);
+    doc.line(xHead, y, xHead + ah, y + ah * 0.7);
+
+    // Etiqueta del nivel (k visible)
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.text(levelLabel, box.x + box.w - 1.8, Math.max(box.y + 3.5, y - 1.2), { align: 'right' });
+  }
+
+  static async _captureZomeOrthoXZ(sceneManager) {
+    const scene = sceneManager.scene;
+    const renderer = sceneManager.renderer;
+    if (!scene || !renderer) throw new Error('scene/renderer no disponibles');
+
+    // Guardar tamaño actual del renderer
+    const originalSize = new THREE.Vector2();
+    renderer.getSize(originalSize);
+
+    // Cámara ortográfica cuadrada
+    const aspect = 1;
+    const frustumSize = state.Dmax * 1.5;
+    const orthoCamera = new THREE.OrthographicCamera(
+      (frustumSize * aspect) / -2,
+      (frustumSize * aspect) / 2,
+      frustumSize / 2,
+      frustumSize / -2,
+      0.1,
+      1000
+    );
+
+    // Altura visible actual (igual a PDF de rombos)
+    const nivelesVisibles = state.cutActive ? (state.N - state.cutLevel) : state.N;
+    const alturaVisible = state.h1 * nivelesVisibles;
+
+    // Vista lateral (desde -Y), centrada al medio de la altura visible
+    orthoCamera.position.set(0, -state.Dmax * 3, alturaVisible / 2);
+    orthoCamera.lookAt(0, 0, alturaVisible / 2);
+    orthoCamera.up.set(0, 0, 1);
+
+    // Guardar override material/clear color
+    const originalOverride = scene.overrideMaterial;
+    const originalClear = renderer.getClearColor(new THREE.Color());
+    const originalClearAlpha = renderer.getClearAlpha();
+
+    // Gris sólido (sin transparencia) para "mismo look que a color, pero sin color"
+    renderer.setClearColor(0xffffff, 1);
+    scene.overrideMaterial = new THREE.MeshLambertMaterial({
+      color: 0xb8b8b8,
+      side: THREE.DoubleSide,
+      transparent: false,
+      opacity: 1.0,
+      depthWrite: true
+    });
+
+    const renderSize = 900;
+    renderer.setSize(renderSize, renderSize);
+    renderer.render(scene, orthoCamera);
+
+    const imageData = renderer.domElement.toDataURL('image/jpeg', 0.75);
+
+    // Restaurar
+    scene.overrideMaterial = originalOverride;
+    renderer.setClearColor(originalClear, originalClearAlpha);
+    renderer.setSize(originalSize.x, originalSize.y);
+
+    return imageData;
   }
 
   static _tickStepMm(lengthMm) {
