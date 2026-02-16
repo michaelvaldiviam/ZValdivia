@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { state } from './state.js';
+import { getRingVertex } from './geometry.js';
 
 /**
  * Reporte PDF: 1 página por nivel K visible (1 viga representativa por nivel).
@@ -49,13 +50,75 @@ export class BeamPDFReporter {
     }
 
     return [...byK.entries()]
-      .sort((a, b) => a[0] - b[0])
-      .map(([k, v]) => ({ kVisible: k, mesh: v.mesh }));
+      .map(([k, v]) => {
+        const info = v.mesh?.userData?.beamInfo || {};
+        const pair = this._normalizeConnPair(info);
+        return { kVisible: k, mesh: v.mesh, _pair: pair };
+      })
+      .sort((A, B) => {
+        const a = A._pair, b = B._pair;
+        if (a && b) {
+          if (a.kLo !== b.kLo) return a.kLo - b.kLo;
+          if (a.kHi !== b.kHi) return a.kHi - b.kHi;
+        } else if (a && !b) {
+          return -1;
+        } else if (!a && b) {
+          return 1;
+        }
+        return A.kVisible - B.kVisible;
+      })
+      .map(({ kVisible, mesh }) => ({ kVisible, mesh }));
   }
 
   static _parseK(name) {
     const m = /beam_k(\d+)_/i.exec(name);
     return m ? Number(m[1]) : NaN;
+  }
+
+  static _parseKFromConnName(name) {
+    if (typeof name !== 'string') return NaN;
+    const m = /^k(\d+)$/i.exec(name.trim());
+    return m ? Number(m[1]) : NaN;
+  }
+
+  /**
+   * Normaliza el par de conectores para que quede (kLo <-> kHi).
+   * Retorna también qué extremo (a/b) corresponde a cada lado.
+   */
+  static _normalizeConnPair(info) {
+    const aName = info?.a?.name;
+    const bName = info?.b?.name;
+    const kA = this._parseKFromConnName(aName);
+    const kB = this._parseKFromConnName(bName);
+    if (!Number.isFinite(kA) || !Number.isFinite(kB)) {
+      return null;
+    }
+    if (kA <= kB) {
+      return { kLo: kA, kHi: kB, nameLo: `k${kA}`, nameHi: `k${kB}`, keyLo: 'a', keyHi: 'b' };
+    }
+    return { kLo: kB, kHi: kA, nameLo: `k${kB}`, nameHi: `k${kA}`, keyLo: 'b', keyHi: 'a' };
+  }
+
+  /**
+   * Fuerza que el eje e apunte de (kLo) -> (kHi) para que el reporte siempre
+   * muestre izquierda = nivel más abajo, derecha = nivel más arriba.
+   * Mantiene base coherente (e y w se invierten juntos).
+   */
+  static _ensureBasisDirectionByLevels(basis, info, pair) {
+    if (!basis || !info?.a?.pos || !info?.b?.pos || !pair) return basis;
+
+    const uA = info.a.pos.dot(basis.e);
+    const uB = info.b.pos.dot(basis.e);
+    // Si el extremo "lo" (más abajo) queda a la derecha, invertimos.
+    const loIsA = pair.keyLo === 'a';
+    const loU = loIsA ? uA : uB;
+    const hiU = loIsA ? uB : uA;
+
+    if (loU > hiU) {
+      basis.e.multiplyScalar(-1);
+      if (basis.w) basis.w.multiplyScalar(-1);
+    }
+    return basis;
   }
 
   static _beamLengthWorld(mesh) {
@@ -108,11 +171,11 @@ export class BeamPDFReporter {
     y += 10;
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(13);
-    doc.text('Creador', 20, y);
+    doc.text('Creado por app ZValdivia', 20, y);
     y += 10;
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(12);
-    doc.text('Michael Valdivia', 24, y); y += 7;
+    doc.text('Autor: Michael Valdivia', 24, y); y += 7;
     doc.text('michaelvaldiviamunoz@gmail.com', 24, y); y += 7;
     doc.text('Chile', 24, y);
   }
@@ -122,16 +185,25 @@ export class BeamPDFReporter {
     const x0 = margin;
     const y0 = margin;
 
+    // Título de la app (arriba a la derecha)
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(16);
+    doc.text('ZValdivia 3D', 210 - margin, y0, { align: 'right' });
+
     const mesh = item.mesh;
     const info = mesh?.userData?.beamInfo || {};
+
+    // Normalizar conectores para que el reporte sea consistente:
+    // izquierda = nivel más abajo (kLo), derecha = nivel más arriba (kHi)
+    const pair = this._normalizeConnPair(info);
 
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(14);
     doc.text(`Viga k${item.kVisible}`, x0, y0);
 
-    // Conectividad
-    const connA = info?.a?.name || 'k?';
-    const connB = info?.b?.name || 'k?';
+    // Conectividad (si hay datos válidos: kLo <-> kHi)
+    const connA = pair ? pair.nameLo : (info?.a?.name || 'k?');
+    const connB = pair ? pair.nameHi : (info?.b?.name || 'k?');
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(10);
@@ -153,26 +225,35 @@ export class BeamPDFReporter {
     }
 
     // Base local (x=e, y=w, z=t)
-    const basis = this._computeBeamBasis(vertsW);
+    // Importante:
+    //   w = eje de ANCHO (valor que el usuario ingresa)
+    //   t = eje de ALTO  (valor que el usuario ingresa)
+    // Esto debe mantenerse estable para no afectar la vista lateral (Largo vs Alto).
+    const basis = this._computeBeamBasis(vertsW, info, { widthMm, heightMm });
     if (!basis) {
       doc.setFontSize(11);
       doc.text('⚠️ No se pudo calcular el sistema local de la viga.', x0, y0 + 26);
       return;
     }
 
-    // Determinar izquierda/derecha según el eje e
-    const e = basis.e;
-    const leftRight = this._orderEndpointsByE(info, e);
-    const leftLabel = leftRight.leftName;
-    const rightLabel = leftRight.rightName;
+    // Forzar orientación izquierda->derecha por niveles (kLo -> kHi)
+    this._ensureBasisDirectionByLevels(basis, info, pair);
 
-    // Ang(d): ángulo entre arista y vector directriz en cada extremo (deg)
+    // Punto de referencia sobre la arista del zonohedro (cara exterior).
+    // Normalmente es el punto medio entre conectores A/B.
+    const edgeMid = (info?.a?.pos && info?.b?.pos)
+      ? info.a.pos.clone().add(info.b.pos).multiplyScalar(0.5)
+      : null;
+
+    // Etiquetas siempre: izquierda = nivel más abajo, derecha = nivel más arriba
+    const leftLabel = pair ? pair.nameLo : (info?.a?.name || 'k?');
+    const rightLabel = pair ? pair.nameHi : (info?.b?.name || 'k?');
+
+    // Ang(d): ángulo en cada extremo según el conector que quede a la izquierda/derecha
     const aAng = Number.isFinite(info.angAdeg) ? info.angAdeg : null;
     const bAng = Number.isFinite(info.angBdeg) ? info.angBdeg : null;
-    const leftAng = leftRight.leftKey === 'a' ? aAng : bAng;
-    const rightAng = leftRight.rightKey === 'a' ? aAng : bAng;
-
-    // Layout de vistas
+    const leftAng = pair ? (pair.keyLo === 'a' ? aAng : bAng) : aAng;
+    const rightAng = pair ? (pair.keyHi === 'a' ? aAng : bAng) : bAng;// Layout de vistas
     const mainBox = { x: 14, y: 42, w: 132, h: 72 };
     const isoBox = { x: 152, y: 42, w: 44, h: 44 };
     const zomeBox = { x: 152, y: 92, w: 44, h: 36 };
@@ -186,10 +267,20 @@ export class BeamPDFReporter {
       rightLabel,
       leftAng,
       rightAng,
+      // Dimensiones declaradas (ayudan a identificar el eje de "ancho" aun si el orden de vértices varía)
+      widthMm,
+      heightMm,
+      // Punto de referencia en la arista del zonohedro para identificar cara exterior
+      edgeMidWorld: edgeMid,
     });
 
     // Vista isométrica (sin ocultas)
-    this._drawBeamIsometric(doc, vertsW, basis, isoBox, { leftLabel, rightLabel });
+    this._drawBeamIsometric(doc, vertsW, basis, isoBox, { leftLabel, rightLabel, edgeMidWorld: edgeMid });
+
+    // Título miniatura ubicación
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.text('Ubicación de la viga', zomeBox.x, zomeBox.y - 1);
 
 
     // Vista vertical del zome (igual al PDF de rombos) + flecha indicando el nivel
@@ -201,11 +292,30 @@ export class BeamPDFReporter {
       doc.text(`Nivel: k${item.kVisible}`, zomeBox.x, zomeBox.y + 4);
     }
 
-    // Vista lateral: e vs t
+    // Vista lateral: Largo vs Alto
+    // Requisito: la línea superior debe corresponder a la cara exterior
+    // (la que pasa por la arista del zonohedro). Para eso forzamos el signo
+    // del eje vertical (t) según el punto medio de la arista.
+    let vAxisSide = basis.t.clone();
+    if (edgeMid) {
+      let mn = Infinity, mx = -Infinity;
+      for (const v of vertsW) {
+        const s = v.dot(vAxisSide);
+        if (s < mn) mn = s;
+        if (s > mx) mx = s;
+      }
+      const sEdge = edgeMid.dot(vAxisSide);
+      // Si la arista está más cerca del mínimo, esa es la cara exterior.
+      // Queremos que esa cara quede "arriba" en papel => v grande.
+      if (Math.abs(sEdge - mn) < Math.abs(sEdge - mx)) {
+        vAxisSide.multiplyScalar(-1);
+      }
+    }
+
     this._drawBeamView(doc, vertsW, basis, {
       viewDir: basis.w.clone(),
       uAxis: basis.e,
-      vAxis: basis.t.clone().multiplyScalar(-1),
+      vAxis: vAxisSide,
       box: sideBox,
       title: 'Vista lateral — Largo vs Alto',
       showDashedHidden: true,
@@ -230,59 +340,166 @@ export class BeamPDFReporter {
     return out;
   }
 
-  static _computeBeamBasis(vertsW) {
-    // Centroides de caras inicio (0..3) y fin (4..7)
-    const cA = new THREE.Vector3();
-    const cB = new THREE.Vector3();
-    for (let i = 0; i < 4; i++) cA.add(vertsW[i]);
-    for (let i = 4; i < 8; i++) cB.add(vertsW[i]);
-    cA.multiplyScalar(1 / 4);
-    cB.multiplyScalar(1 / 4);
+    static _computeBeamBasis(vertsW, info = null, dims = null) {
+    if (!vertsW || vertsW.length < 4) return null;
 
-    const e = new THREE.Vector3().subVectors(cB, cA);
+    // ---------------------------------------------
+    // SISTEMA CANÓNICO (infalible incluso si ancho==alto)
+    //  X = eje de la arista/viga (largo)
+    //  Y = ancho (en la cara que contiene la arista del zonohedro)
+    //  Z = normal de esa cara (alto), orientada de modo que el interior quede con Z negativo
+    // ---------------------------------------------
+
+    // Extremos de la arista del zonohedro (en mundo)
+    const A = (info?.a?.pos && info.a.pos.isVector3) ? info.a.pos.clone() : null;
+    const B = (info?.b?.pos && info.b.pos.isVector3) ? info.b.pos.clone() : null;
+
+    // Eje largo (X)
+    let e = null;
+    if (info?.edgeDir && info.edgeDir.isVector3) {
+      e = info.edgeDir.clone();
+      if (e.lengthSq() < 1e-12) e = null;
+    }
+    if (!e && A && B) {
+      e = new THREE.Vector3().subVectors(B, A);
+    }
+    if (!e) {
+      // Fallback: par de vértices más alejados
+      let bestI = 0, bestJ = 1, bestD2 = -1;
+      for (let i = 0; i < vertsW.length; i++) {
+        for (let j = i + 1; j < vertsW.length; j++) {
+          const d2 = vertsW[i].distanceToSquared(vertsW[j]);
+          if (d2 > bestD2) { bestD2 = d2; bestI = i; bestJ = j; }
+        }
+      }
+      e = new THREE.Vector3().subVectors(vertsW[bestJ], vertsW[bestI]);
+    }
     if (e.lengthSq() < 1e-12) return null;
     e.normalize();
 
-    // --- Base local robusta (para vigas con twist/bisel) ---
-    // 1) Vector “alto” aproximado: inner(2,3,6,7) - outer(0,1,4,5)
-    const cOuter = new THREE.Vector3();
-    const cInner = new THREE.Vector3();
-    [0, 1, 4, 5].forEach(i => cOuter.add(vertsW[i]));
-    [2, 3, 6, 7].forEach(i => cInner.add(vertsW[i]));
-    cOuter.multiplyScalar(1 / 4);
-    cInner.multiplyScalar(1 / 4);
-    const tRaw = new THREE.Vector3().subVectors(cInner, cOuter);
-    if (tRaw.lengthSq() < 1e-12) return null;
+    // Centroide de la viga
+    const c = new THREE.Vector3();
+    for (const v of vertsW) c.add(v);
+    c.multiplyScalar(1 / vertsW.length);
 
-    // 2) Vector “ancho” aproximado: promedio de las aristas de ancho de la cara exterior
-    // (0->1) y (4->5). Esto evita que el ancho se “contamine” por el alto cuando hay bisel.
-    const wRaw = new THREE.Vector3()
-      .add(new THREE.Vector3().subVectors(vertsW[1], vertsW[0]))
-      .add(new THREE.Vector3().subVectors(vertsW[5], vertsW[4]));
-    if (wRaw.lengthSq() < 1e-12) return null;
+    // Helper: distancia^2 punto->recta AB (eje e)
+    const dist2ToLineAB = (p) => {
+      const base = A ? A : c;
+      const d = new THREE.Vector3().subVectors(p, base);
+      const proj = e.clone().multiplyScalar(d.dot(e));
+      return d.sub(proj).lengthSq();
+    };
 
-    // Ortonormalización suave: w ⟂ e
-    const w = wRaw.sub(e.clone().multiplyScalar(wRaw.dot(e)));
+    // ---------------------------------------------
+    // 1) Detectar la cara que "contiene" la arista:
+    //    Tomamos los 4 vértices más cercanos a la recta AB (o al eje e si faltan A/B)
+    // ---------------------------------------------
+    let faceIdx = null;
+    if (vertsW.length >= 8) {
+      const idx = [...Array(vertsW.length).keys()];
+      idx.sort((i, j) => dist2ToLineAB(vertsW[i]) - dist2ToLineAB(vertsW[j]));
+      faceIdx = idx.slice(0, 4);
+    } else {
+      faceIdx = [0, 1, 2, 3].slice(0, Math.min(4, vertsW.length));
+    }
+
+    const facePts = faceIdx.map(i => vertsW[i]);
+
+    // Centro de la cara exterior
+    const faceCenter = new THREE.Vector3();
+    for (const p of facePts) faceCenter.add(p);
+    faceCenter.multiplyScalar(1 / facePts.length);
+
+    // ---------------------------------------------
+    // 2) Normal robusta de esa cara (Z)
+    //    Elegimos 3 puntos no colineales de la cara (máxima estabilidad)
+    // ---------------------------------------------
+    const p0 = facePts[0];
+    let p1 = facePts[1];
+    let bestD2 = -1;
+    for (const p of facePts) {
+      const d2 = p0.distanceToSquared(p);
+      if (d2 > bestD2) { bestD2 = d2; p1 = p; }
+    }
+
+    // p2: el que maximiza la distancia a la recta p0->p1
+    const v01 = new THREE.Vector3().subVectors(p1, p0);
+    const v01n = v01.clone();
+    if (v01n.lengthSq() < 1e-12) v01n.set(1, 0, 0);
+    v01n.normalize();
+
+    let p2 = null;
+    let bestDLine = -1;
+    for (const p of facePts) {
+      const d = new THREE.Vector3().subVectors(p, p0);
+      const proj = v01n.clone().multiplyScalar(d.dot(v01n));
+      const dLine = d.sub(proj).lengthSq();
+      if (dLine > bestDLine) { bestDLine = dLine; p2 = p; }
+    }
+    if (!p2) p2 = facePts[2] || facePts[1];
+
+    let z = new THREE.Vector3().crossVectors(
+      new THREE.Vector3().subVectors(p1, p0),
+      new THREE.Vector3().subVectors(p2, p0)
+    );
+
+    // Asegurar z ⟂ e (por seguridad numérica)
+    z.sub(e.clone().multiplyScalar(z.dot(e)));
+    if (z.lengthSq() < 1e-12) {
+      // Fallback suave: PCA transversal en el plano ⟂ e
+      // (solo para evitar null; en la práctica A/B + cara válida evita caer aquí)
+      const pts2 = vertsW.map(p => {
+        const u = p.dot(e);
+        const pp = p.clone().sub(e.clone().multiplyScalar(u));
+        return pp;
+      });
+      // tomar 2 direcciones con mayor varianza usando la mayor distancia par a par
+      let i0 = 0, j0 = 1, dmax = -1;
+      for (let i = 0; i < pts2.length; i++) {
+        for (let j = i + 1; j < pts2.length; j++) {
+          const d2 = pts2[i].distanceToSquared(pts2[j]);
+          if (d2 > dmax) { dmax = d2; i0 = i; j0 = j; }
+        }
+      }
+      const yTmp = new THREE.Vector3().subVectors(pts2[j0], pts2[i0]);
+      if (yTmp.lengthSq() < 1e-12) return null;
+      yTmp.normalize();
+      z = new THREE.Vector3().crossVectors(e, yTmp);
+      if (z.lengthSq() < 1e-12) return null;
+    }
+
+    z.normalize();
+
+    // ---------------------------------------------
+    // 3) Orientar Z para que el interior quede con Z negativo
+    //    vin = (centro viga) - (centro cara exterior) apunta hacia adentro
+    //    Queremos dot(vin, z) < 0  => interior en -z
+    // ---------------------------------------------
+    const vin = new THREE.Vector3().subVectors(c, faceCenter);
+    if (vin.dot(z) > 0) z.multiplyScalar(-1);
+
+    // ---------------------------------------------
+    // 4) Eje Y: dentro de la cara exterior y perpendicular a X
+    // ---------------------------------------------
+    const w = new THREE.Vector3().crossVectors(z, e);
     if (w.lengthSq() < 1e-12) return null;
     w.normalize();
 
-    // t ⟂ e y ⟂ w
-    const t = tRaw
-      .sub(e.clone().multiplyScalar(tRaw.dot(e)))
-      .sub(w.clone().multiplyScalar(tRaw.dot(w)));
-    if (t.lengthSq() < 1e-12) return null;
-    t.normalize();
+    // Re-ortonormalizar X para evitar deriva numérica
+    const e2 = new THREE.Vector3().crossVectors(w, z);
+    if (e2.lengthSq() < 1e-12) return null;
+    e2.normalize();
 
-    // Re-derivar w para asegurar mano derecha exacta
-    const wOrtho = new THREE.Vector3().crossVectors(e, t);
-    if (wOrtho.lengthSq() < 1e-12) return null;
-    wOrtho.normalize();
-
-    // Mantener la orientación de ancho coherente con w (evita flips visuales)
-    if (wOrtho.dot(w) < 0) wOrtho.multiplyScalar(-1);
-
-    return { e, w: wOrtho, t };
+    return {
+      e: e2,
+      w,
+      t: z,           // "alto" / normal de la cara exterior
+      c,
+      faceCenter,     // útil si quieres anclar z=0 en el futuro
+      z0: faceCenter.dot(z),
+    };
   }
+
 
   static _orderEndpointsByE(info, eAxis) {
     const aPos = info?.a?.pos;
@@ -325,6 +542,99 @@ static _edges() {
   }
 
   /**
+   * Construye 2 ejes candidatos en el plano ⟂ e (sección transversal),
+   * usando aristas reales de la geometría de la viga.
+   *
+   * Evita depender del orden fijo de vértices (0-1 / 4-5), que en algunas vigas
+   * puede corresponder a otra dirección y colapsar la planta.
+   */
+  static _computeCrossSectionAxesFromEdges(vertsW, eAxis) {
+    const e = eAxis.clone().normalize();
+    const edges = this._edges();
+    const cand = [];
+    for (const [i0, i1] of edges) {
+      const v = new THREE.Vector3().subVectors(vertsW[i1], vertsW[i0]);
+      // proyectar al plano perpendicular a e
+      const vp = v.sub(e.clone().multiplyScalar(v.dot(e)));
+      const lsq = vp.lengthSq();
+      if (lsq > 1e-12) cand.push({ dir: vp.normalize(), len: Math.sqrt(lsq) });
+    }
+    if (cand.length === 0) return null;
+
+    // ordenar por largo proyectado (preferimos aristas puras de sección)
+    cand.sort((a, b) => b.len - a.len);
+
+    const a = cand[0].dir.clone();
+    let b = null;
+    for (let i = 1; i < cand.length; i++) {
+      const d = Math.abs(cand[i].dir.dot(a));
+      if (d < 0.80) { // no casi-paralelo
+        b = cand[i].dir.clone();
+        break;
+      }
+    }
+    if (!b) {
+      // fallback: eje cualquiera perpendicular a e y a
+      b = new THREE.Vector3().crossVectors(e, a);
+      if (b.lengthSq() < 1e-12) b = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 0, 1), a);
+    }
+
+    // ortonormalizar b respecto a a
+    b.sub(a.clone().multiplyScalar(b.dot(a)));
+    if (b.lengthSq() < 1e-12) {
+      b = new THREE.Vector3().crossVectors(e, a);
+      if (b.lengthSq() < 1e-12) return null;
+    }
+    b.normalize();
+
+    // asegurar consistencia de mano derecha (a,b,e)
+    const right = new THREE.Vector3().crossVectors(a, b);
+    if (right.dot(e) < 0) b.multiplyScalar(-1);
+
+    return { a, b };
+  }
+
+  /**
+   * Decide cuál eje transversal corresponde al "ancho" (planta) usando:
+   * - widthMm/heightMm si existen (preferimos el eje cuyo span se acerque a width)
+   * - o, si no existen, el menor span como ancho (típico: ancho < alto)
+   */
+  static _pickWidthAxisForPlan(vertsW, eAxis, widthMm, heightMm) {
+    const axes = this._computeCrossSectionAxesFromEdges(vertsW, eAxis);
+    if (!axes) return null;
+
+    const spanAlong = (axis) => {
+      let mn = Infinity, mx = -Infinity;
+      for (const v of vertsW) {
+        const s = v.dot(axis);
+        mn = Math.min(mn, s);
+        mx = Math.max(mx, s);
+      }
+      return Math.max(0, mx - mn);
+    };
+
+    const a = axes.a.clone();
+    const b = axes.b.clone();
+    const spanA = spanAlong(a);
+    const spanB = spanAlong(b);
+
+    const wT = Number.isFinite(widthMm) ? (widthMm / 1000) : null;
+    const hT = Number.isFinite(heightMm) ? (heightMm / 1000) : null;
+
+    if (wT != null) {
+      const dA = Math.abs(spanA - wT);
+      const dB = Math.abs(spanB - wT);
+      return (dA <= dB) ? a : b;
+    }
+    if (hT != null) {
+      const dA = Math.abs(spanA - hT);
+      const dB = Math.abs(spanB - hT);
+      return (dA <= dB) ? b : a;
+    }
+    return (spanA <= spanB) ? a : b;
+  }
+
+  /**
    * Vista en planta (u=eje de viga, v=ancho), mostrando bisel por líneas de corte:
    * - Contorno visible: cara exterior (t=min)
    * - Línea oculta (discontinua): intersección del bisel con la cara interior (t=max)
@@ -338,18 +648,68 @@ static _edges() {
     // Margen interno del área de dibujo (mm en coordenadas del PDF)
     const pad = 7;
 
-    const e = basis.e, w = basis.w, t = basis.t;
+    const e = basis.e;
 
-    // Proyección local para planta:
+    // --- Planta canónica ---
+    // La base ya viene fijada de manera determinista:
+    //   e = largo (arista)
+    //   w = ancho (en la cara que contiene la arista)
+    //   t = alto  (normal de esa cara), orientada para que el interior quede con z < 0
+    let wPlan = (basis?.w ? basis.w.clone() : null);
+    if (!wPlan) {
+      // Fallback extremadamente raro
+      wPlan = new THREE.Vector3(0, 1, 0);
+      wPlan.sub(e.clone().multiplyScalar(wPlan.dot(e)));
+      if (wPlan.lengthSq() < 1e-12) wPlan = new THREE.Vector3(1, 0, 0).cross(e);
+    }
+    wPlan.normalize();
+
+    // Eje de profundidad (alto) de planta: normal de la cara exterior
+    const t = (basis?.t ? basis.t.clone().normalize() : new THREE.Vector3().crossVectors(wPlan, e).normalize());
+// Proyección local para planta:
     //   u = e (largo),
     //   v = w (ancho),
     //   z = t (hacia adentro)
-    const P = vertsW.map(v3 => ({ u: v3.dot(e), v: v3.dot(w), z: v3.dot(t) }));
+    const P = vertsW.map(v3 => ({ u: v3.dot(e), v: v3.dot(wPlan), z: v3.dot(t) }));
 
-    // Caras: exterior (pasa por la arista) e interior (hacia adentro)
-    // Nota: índices acordes a la viga (0..3 extremo A, 4..7 extremo B)
-    const outerIdx = [0, 1, 5, 4];
-    const innerIdx = [3, 2, 6, 7];
+    // --- Selección dinámica de caras y extremos (NO depender del orden 0..7) ---
+    // exterior/interior:
+    // La cara exterior es la que pasa por la arista del zonohedro (conectores A/B).
+    // Usamos edgeMidWorld (si existe) para decidir qué lado de z corresponde a "exterior",
+    // y evitamos invertir por signo del eje t.
+    const idxAll = [0, 1, 2, 3, 4, 5, 6, 7];
+
+    let outerIdx = null;
+    let innerIdx = null;
+    if (opts?.edgeMidWorld && opts.edgeMidWorld.isVector3) {
+      const zRef = opts.edgeMidWorld.dot(t);
+      const byDist = idxAll.slice().sort((i, j) =>
+        Math.abs(P[i].z - zRef) - Math.abs(P[j].z - zRef)
+      );
+      outerIdx = byDist.slice(0, 4);
+      innerIdx = byDist.slice(4, 8);
+    } else {
+      // Fallback: por profundidad z
+      const sortedByZ = idxAll.slice().sort((i, j) => P[i].z - P[j].z);
+      outerIdx = sortedByZ.slice(0, 4);
+      innerIdx = sortedByZ.slice(4, 8);
+    }
+
+    // extremos: por u (eje largo)
+    const sortedByU = idxAll.slice().sort((i, j) => P[i].u - P[j].u);
+    const endAIdx = sortedByU.slice(0, 4); // extremo izquierdo (u menor)
+    const endBIdx = sortedByU.slice(4, 8); // extremo derecho (u mayor)
+
+    const intersect = (A, B) => A.filter(i => B.includes(i));
+    let leftDash = intersect(innerIdx, endAIdx);
+    let rightDash = intersect(innerIdx, endBIdx);
+
+    const pick2MostInner = (endIdx) => {
+      const s = endIdx.slice().sort((i, j) => P[j].z - P[i].z); // z grande = más adentro
+      return s.slice(0, 2);
+    };
+    if (leftDash.length !== 2) leftDash = pick2MostInner(endAIdx);
+    if (rightDash.length !== 2) rightDash = pick2MostInner(endBIdx);
 
     // Bounds para escala
     let minU = Infinity, maxU = -Infinity, minV = Infinity, maxV = -Infinity;
@@ -373,13 +733,16 @@ static _edges() {
     // --- Break dinámico (vista rota) ---
     // El ángulo del bisel afecta cuánto "corre" la testa en u. Estimamos ese avance usando
     // la dispersión de u en los 4 vértices de cada extremo.
-    const endA_uMax = Math.max(P[0].u, P[1].u, P[2].u, P[3].u);
-    const endB_uMin = Math.min(P[4].u, P[5].u, P[6].u, P[7].u);
+    const endA_uMax = Math.max(...endAIdx.map(i => P[i].u));
+    const endB_uMin = Math.min(...endBIdx.map(i => P[i].u));
     const needLeft  = Math.max(0, endA_uMax - minU);
     const needRight = Math.max(0, maxU - endB_uMin);
 
     let broken = lengthMm > 900; // umbral
-    const minKeepWorld = 0.10;   // 100 mm
+    /* keepWorld: cuánto material real dejamos en cada extremo en vista rota.
+       Debe cubrir el bisel (needLeft/needRight) pero ser lo más pequeño posible
+       para permitir una escala mayor sin distorsionar el dibujo. */
+    const minKeepWorld = 0.06;   // 60 mm
     const extraWorld = 0.020;    // 20 mm
     let keepWorld = Math.max(minKeepWorld, needLeft + extraWorld, needRight + extraWorld);
 
@@ -387,20 +750,39 @@ static _edges() {
     keepWorld = Math.min(keepWorld, spanU * 0.42);
     if (keepWorld * 2 >= spanU * 0.92) broken = false;
 
-    // Escalas
-    const scaleByV = (box.h - 2 * pad) / spanV;
-    const scaleByU = (box.w - 2 * pad) / spanU;
-    const gapPaper = 14; // mm, espacio del "..."
+    // Escalas// Escalas (UNIFORME para preservar ángulos medibles en papel)
+const scaleByV = (box.h - 2 * pad) / spanV;
+const scaleByU = (box.w - 2 * pad) / spanU;
+// Espacio del quiebre ("...") en papel.
+const gapPaper = 4; // mm
 
-    let scale;
-    if (!broken) {
-      scale = Math.min(scaleByV, scaleByU);
-    } else {
-      // Forzar que los extremos (en escala real) quepan sin aplastarse
-      const scaleByEnds = (box.w - 2 * pad - gapPaper) / (2 * keepWorld);
-      scale = Math.min(scaleByV, scaleByEnds);
-    }
+// Evitar plantas demasiado delgadas SIN distorsión (ángulos deben mantenerse reales).
+// En vez de escalar V por separado, forzamos una escala mínima UNIFORME y, si hace falta,
+// activamos break.
+const minVpaper = 6; // mm mínimos de espesor visible en planta
+const minScaleForThickness = minVpaper / spanV;
 
+// Si la escala por ancho (U) dejaría la viga demasiado delgada, forzar vista rota.
+if (!broken && scaleByU < minScaleForThickness && lengthMm > 220) {
+  broken = true;
+}
+
+let scale;
+if (!broken) {
+  scale = Math.min(scaleByV, scaleByU);
+  // Intentar subir escala para lograr el espesor mínimo, limitado por alto.
+  scale = Math.min(scaleByV, Math.max(scale, minScaleForThickness));
+} else {
+  const availW = (box.w - 2 * pad - gapPaper);
+  const requiredMinKeep = Math.max(minKeepWorld, needLeft + extraWorld, needRight + extraWorld);
+  const keepMaxForMinThickness = availW / (2 * Math.max(1e-9, minScaleForThickness));
+  // Reducir keepWorld si hay margen, para permitir mayor escala (sin bajar de lo requerido por bisel).
+  keepWorld = Math.max(requiredMinKeep, Math.min(keepWorld, keepMaxForMinThickness));
+
+  const scaleByEnds = availW / (2 * keepWorld);
+  scale = Math.min(scaleByV, scaleByEnds);
+  // Si todavía queda delgada, no hay espacio suficiente; se respeta escala máxima posible sin distorsión.
+}
     const xLeft0 = box.x + pad;
     const xRight0 = box.x + box.w - pad;
 
@@ -444,18 +826,29 @@ static _edges() {
     doc.setDrawColor(20);
     doc.setLineWidth(0.6);
 
-    // Contorno visible: cara exterior (0-1-5-4)
-    drawSeg(P[0], P[1], false);
-    drawSeg(P[1], P[5], false);
-    drawSeg(P[5], P[4], false);
-    drawSeg(P[4], P[0], false);
+    // Contorno visible: cara exterior (cuadrilátero ordenado en (u,v))
+    const orderQuad = (idxArr) => {
+      const cx = idxArr.reduce((s, i) => s + P[i].u, 0) / idxArr.length;
+      const cy = idxArr.reduce((s, i) => s + P[i].v, 0) / idxArr.length;
+      return idxArr.slice().sort((i, j) => {
+        const ai = Math.atan2(P[i].v - cy, P[i].u - cx);
+        const aj = Math.atan2(P[j].v - cy, P[j].u - cx);
+        return ai - aj;
+      });
+    };
+    const outOrd = orderQuad(outerIdx);
+    for (let k = 0; k < outOrd.length; k++) {
+      const i0 = outOrd[k];
+      const i1 = outOrd[(k + 1) % outOrd.length];
+      drawSeg(P[i0], P[i1], false);
+    }
 
     // Líneas ocultas (discontinuas) que expresan el bisel en planta:
-    // izquierda: (2–3), derecha: (6–7)
+    // conectan los 2 vértices "internos" de cada extremo.
     doc.setDrawColor(60);
     doc.setLineWidth(0.35);
-    drawSeg(P[2], P[3], true);
-    drawSeg(P[6], P[7], true);
+    drawSeg(P[leftDash[0]], P[leftDash[1]], true);
+    drawSeg(P[rightDash[0]], P[rightDash[1]], true);
     doc.setLineDashPattern([], 0);
 
     // Ellipsis centrado en la viga (no en la caja)
@@ -532,17 +925,19 @@ static _edges() {
     const lengthMm = spanU * 1000;
     let broken = lengthMm > 900;
 
-    const minKeepWorld = 0.10; // 100mm
-    const extraWorld = 0.020;  // 20mm
-    let keepWorldDesired = Math.max(minKeepWorld, needLeft + extraWorld, needRight + extraWorld);
-    keepWorldDesired = Math.min(keepWorldDesired, spanU * 0.42);
+    const minKeepWorld = 0.15; // 150mm
+    const extraWorld = 0.030;  // 30mm
+    // Mostrar más material en los extremos para reducir el vacío central en papel
+    let keepWorldDesired = Math.max(minKeepWorld, spanU * 0.30, needLeft + extraWorld, needRight + extraWorld);
+    keepWorldDesired = Math.min(keepWorldDesired, spanU * 0.48);
 
     if (keepWorldDesired * 2 >= spanU * 0.92) broken = false;
 
     // Escala base por alto (v), pero permitimos reducirla para que se aprecien los biseles.
     let scaleByV = (box.h - 2 * pad) / spanV;
 
-    const gapPaper = 14;
+    // Espacio del quiebre ("...") en papel. Se reduce para evitar un gran vacío central.
+    const gapPaper = 8;
     const xLeft0 = box.x + pad;
     const xRight0 = box.x + box.w - pad;
 
@@ -608,7 +1003,8 @@ for (const [i0, i1] of edges) {
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(14);
       const midX = (xLeftEnd + xRightStart) / 2;
-      const midY = box.y + box.h / 2;
+      const drawnH = spanV * scale;
+      const midY = box.y + pad + drawnH / 2;
       doc.text('...', midX, midY, { align: 'center' });
     }
   }
@@ -628,16 +1024,38 @@ static _drawBeamIsometric(doc, vertsW, basis, box, opts = {}) {
     if (isoLabel) {
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(7);
-      doc.text(isoLabel, box.x + box.w / 2, box.y + box.h + 4, { align: 'center' });
+      doc.text(isoLabel, box.x + box.w / 2, box.y + box.h - 2.5, { align: 'center' });
     }
 
-    // Coordenadas locales: x = largo (e), y = ancho (w), z = alto hacia exterior (-t)
-    const e = basis.e, w = basis.w, t = basis.t;
-    const ptsL = vertsW.map(p => ({
-      x: p.dot(e),
-      y: p.dot(w),
-      z: -p.dot(t),
-    }));
+    // Coordenadas locales: x = largo (e), y = ancho (w), z = alto.
+// Nota: el signo del eje "z" debe ser estable: "arriba" debe corresponder a la cara exterior
+// (la que pasa por la arista del zonohedro). Para evitar inversiones, elegimos el signo
+// que deja el punto medio de la arista lo más "arriba" posible dentro del rango de la viga.
+const e = basis.e, w = basis.w, t = basis.t;
+
+// Elegir signo de Z (±t) de manera determinista
+let zSign = -1; // compatibilidad con la convención previa (z = -dot(t))
+if (opts && opts.edgeMidWorld) {
+  const dots = vertsW.map(p => p.dot(t));
+  const mn = Math.min(...dots);
+  const mx = Math.max(...dots);
+  const dMid = opts.edgeMidWorld.dot(t);
+
+  // Evaluar ambas orientaciones y quedarnos con la que deja el punto medio más cerca de "arriba" (posición ~ 1)
+  const span = Math.max(1e-9, mx - mn);
+  const posNeg = ((-dMid) - (-mx)) / span; // cuando z = -dot(t): rango [-mx, -mn], arriba = max = -mn
+  const posPos = (( dMid) - ( mn)) / span; // cuando z = +dot(t): rango [mn, mx], arriba = max = mx
+
+  // Queremos la orientación con mayor "posición hacia arriba"
+  // posNeg en [0,1] si dMid está dentro; posPos también.
+  if (posPos > posNeg) zSign = +1;
+}
+
+const ptsL = vertsW.map(p => ({
+  x: p.dot(e),
+  y: p.dot(w),
+  z: zSign * p.dot(t),
+}));
 
     // Proyección isométrica determinista (dibujo técnico):
     // X = (x - y)*cos30, Y = z + (x + y)*sin30
@@ -673,16 +1091,17 @@ static _drawBeamIsometric(doc, vertsW, basis, box, opts = {}) {
     // Misma vista vertical (ortográfica) usada en el PDF de rombos, pero insertada aquí
     // y con una flecha que marca el nivel al que pertenece la viga.
 
-    // Recuadro (se mantiene, tal como se solicitó)
-    doc.setDrawColor(120);
-    doc.setLineWidth(0.2);
-    doc.rect(box.x, box.y, box.w, box.h);
-
     // Captura ortográfica lateral (XZ)
     const img = await this._captureZomeOrthoXZ(sceneManager);
 
     // Insertar imagen (no transparente, fondo blanco)
     doc.addImage(img, 'JPEG', box.x, box.y, box.w, box.h);
+
+    // Recuadro (dibujar DESPUÉS de la imagen para que no quede “lavado”)
+    // y con la misma intensidad/estilo del recuadro de la isométrica.
+    doc.setDrawColor(120);
+    doc.setLineWidth(0.2);
+    doc.rect(box.x, box.y, box.w, box.h);
 
     // Determinar altura (Z) representativa del NIVEL de la viga.
     // Importante: como las testas son biseladas, el centro geométrico no coincide necesariamente con
@@ -756,9 +1175,109 @@ static _drawBeamIsometric(doc, vertsW, basis, box, opts = {}) {
   }
 
   static async _captureZomeOrthoXZ(sceneManager) {
-    const scene = sceneManager.scene;
-    const renderer = sceneManager.renderer;
-    if (!scene || !renderer) throw new Error('scene/renderer no disponibles');
+    const renderer = sceneManager && sceneManager.renderer;
+    if (!renderer) throw new Error('renderer no disponible');
+
+    // ⚠️ IMPORTANTE: esta miniatura debe ser INDEPENDIENTE de los toggles del usuario
+    // (caras/aristas/polígonos/estructura). Construimos una escena temporal solo con
+    // caras sólidas (gris) usando la misma lógica geométrica del zonohedro.
+    const tmpScene = new THREE.Scene();
+    tmpScene.background = new THREE.Color(0xffffff);
+
+    // Luces simples para sombreado sólido (similar al reporte de rombos)
+    // Un poco más claro que antes (mejor legibilidad en PDF)
+    tmpScene.add(new THREE.AmbientLight(0xffffff, 0.92));
+    const dir = new THREE.DirectionalLight(0xffffff, 0.60);
+    dir.position.set(2, -3, 4);
+    tmpScene.add(dir);
+
+    // Construir geometría de caras (rombos + tapa de corte) en coordenadas *visibles*
+    const { N, h1, cutActive, cutLevel, Dmax } = state;
+    const zShift = cutActive ? (-cutLevel * h1) : 0;
+    const startK = cutActive ? cutLevel : 1;
+    const positions = [];
+
+    for (let k = startK; k <= N - 1; k++) {
+      for (let i = 0; i < N; i++) {
+        let idxL, idxR;
+        if (k % 2 === 1) {
+          idxL = i;
+          idxR = (i + 1) % N;
+        } else {
+          idxL = (i - 1 + N) % N;
+          idxR = i;
+        }
+
+        const vLeft = getRingVertex(k, idxL);
+        const vRight = getRingVertex(k, idxR);
+
+        if (cutActive && k === cutLevel) {
+          const vTop = getRingVertex(k + 1, i);
+          positions.push(
+            vLeft.x, vLeft.y, vLeft.z + zShift,
+            vRight.x, vRight.y, vRight.z + zShift,
+            vTop.x, vTop.y, vTop.z + zShift
+          );
+        } else {
+          const vBottom = getRingVertex(k - 1, i);
+          const vTop = getRingVertex(k + 1, i);
+
+          // Dos triángulos por rombo (misma triangulación que createRhombi)
+          positions.push(
+            vBottom.x, vBottom.y, vBottom.z + zShift,
+            vRight.x, vRight.y, vRight.z + zShift,
+            vLeft.x, vLeft.y, vLeft.z + zShift,
+
+            vTop.x, vTop.y, vTop.z + zShift,
+            vLeft.x, vLeft.y, vLeft.z + zShift,
+            vRight.x, vRight.y, vRight.z + zShift
+          );
+        }
+      }
+    }
+
+    // Tapa del plano de corte (para que el "suelo" exista incluso si el usuario desactivó caras)
+    if (cutActive) {
+      const z0 = (cutLevel * h1) + zShift; // debe quedar en 0
+      const center = new THREE.Vector3(0, 0, z0);
+      for (let i = 0; i < N; i++) {
+        const a = getRingVertex(cutLevel, i);
+        const b = getRingVertex(cutLevel, (i + 1) % N);
+        positions.push(
+          center.x, center.y, center.z,
+          a.x, a.y, a.z + zShift,
+          b.x, b.y, b.z + zShift
+        );
+      }
+    }
+
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    g.computeVertexNormals();
+
+    const solidMat = new THREE.MeshLambertMaterial({
+      // Más claro (menos "gris pesado")
+      color: 0xF2F2F2,
+      side: THREE.DoubleSide,
+      transparent: false,
+      opacity: 1.0,
+      depthWrite: true,
+      // Empuja levemente las caras hacia atrás para que las aristas se vean nítidas
+      // sin z-fighting.
+      polygonOffset: true,
+      polygonOffsetFactor: 1,
+      polygonOffsetUnits: 1
+    });
+
+    const solidMesh = new THREE.Mesh(g, solidMat);
+    tmpScene.add(solidMesh);
+
+    // Aristas para distinguir bien los rombos/caras (similar a la vista del PDF de rombos)
+    // Usamos EdgesGeometry para NO dibujar la diagonal interna de la triangulación.
+    const edgesGeom = new THREE.EdgesGeometry(g, 1);
+    const edgesMat = new THREE.LineBasicMaterial({ color: 0x3a3a3a });
+    const edges = new THREE.LineSegments(edgesGeom, edgesMat);
+    tmpScene.add(edges);
 
     // Guardar tamaño actual del renderer
     const originalSize = new THREE.Vector2();
@@ -766,50 +1285,45 @@ static _drawBeamIsometric(doc, vertsW, basis, box, opts = {}) {
 
     // Cámara ortográfica cuadrada
     const aspect = 1;
-    const frustumSize = state.Dmax * 1.5;
+    const frustumSize = Dmax * 1.5;
     const orthoCamera = new THREE.OrthographicCamera(
       (frustumSize * aspect) / -2,
       (frustumSize * aspect) / 2,
       frustumSize / 2,
       frustumSize / -2,
       0.1,
-      1000
+      2000
     );
 
     // Altura visible actual (igual a PDF de rombos)
-    const nivelesVisibles = state.cutActive ? (state.N - state.cutLevel) : state.N;
-    const alturaVisible = state.h1 * nivelesVisibles;
+    const nivelesVisibles = cutActive ? (N - cutLevel) : N;
+    const alturaVisible = h1 * nivelesVisibles;
 
     // Vista lateral (desde -Y), centrada al medio de la altura visible
-    orthoCamera.position.set(0, -state.Dmax * 3, alturaVisible / 2);
+    orthoCamera.position.set(0, -Dmax * 3, alturaVisible / 2);
     orthoCamera.lookAt(0, 0, alturaVisible / 2);
     orthoCamera.up.set(0, 0, 1);
 
-    // Guardar override material/clear color
-    const originalOverride = scene.overrideMaterial;
+    // Guardar clear color
     const originalClear = renderer.getClearColor(new THREE.Color());
     const originalClearAlpha = renderer.getClearAlpha();
 
-    // Gris sólido (sin transparencia) para "mismo look que a color, pero sin color"
     renderer.setClearColor(0xffffff, 1);
-    scene.overrideMaterial = new THREE.MeshLambertMaterial({
-      color: 0xb8b8b8,
-      side: THREE.DoubleSide,
-      transparent: false,
-      opacity: 1.0,
-      depthWrite: true
-    });
-
     const renderSize = 900;
     renderer.setSize(renderSize, renderSize);
-    renderer.render(scene, orthoCamera);
+    renderer.render(tmpScene, orthoCamera);
 
-    const imageData = renderer.domElement.toDataURL('image/jpeg', 0.75);
+    const imageData = renderer.domElement.toDataURL('image/jpeg', 0.80);
 
     // Restaurar
-    scene.overrideMaterial = originalOverride;
     renderer.setClearColor(originalClear, originalClearAlpha);
     renderer.setSize(originalSize.x, originalSize.y);
+
+    // Liberar geometría
+    g.dispose();
+    solidMat.dispose();
+    edgesGeom.dispose();
+    edgesMat.dispose();
 
     return imageData;
   }

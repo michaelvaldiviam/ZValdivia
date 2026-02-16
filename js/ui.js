@@ -12,6 +12,9 @@ export class UIManager {
 
     this.getDOMElements();
     this.setupEventListeners();
+
+    // Iniciar panel principal colapsado
+    this.setMainPanelCollapsed(true);
   }
 
   getDOMElements() {
@@ -345,6 +348,14 @@ export class UIManager {
     if (this.quickInfo) {
       this.quickInfo.classList.toggle('collapsed');
     }
+  }
+
+  setMainPanelCollapsed(collapsed = true) {
+    const on = !!collapsed;
+    if (this.paramsSection) this.paramsSection.classList.toggle('collapsed', on);
+    if (this.quickInfo) this.quickInfo.classList.toggle('collapsed', on);
+    // El botón suele invertir su ícono/estado con la misma clase 'collapsed'
+    if (this.toggleMainPanelBtn) this.toggleMainPanelBtn.classList.toggle('collapsed', on);
   }
 
   toggleMainPanel() {
