@@ -25,13 +25,35 @@ export class BeamPDFReporter {
 
     this._addCover(doc);
 
+    // Conteo real de instancias de vigas (evita heuristicas N vs 2N).
+    const beamCountMap = BeamPDFReporter._countBeamInstances(structureGroup);
+
     for (let i = 0; i < beams.length; i++) {
       doc.addPage();
-      await this._addBeamPage(doc, beams[i], i + 1, sceneManager);
+      await this._addBeamPage(doc, beams[i], i + 1, sceneManager, beamCountMap);
     }
 
     const filename = `Vigas_ZValdivia_N${state.N}_a${state.aDeg.toFixed(2)}.pdf`;
     doc.save(filename);
+  }
+
+  /**
+   * Cuenta instancias reales de vigas presentes en la estructura visible.
+   * Retorna Map con key "kLo-kHi" -> count.
+   */
+  static _countBeamInstances(structureGroup) {
+    const map = new Map();
+    if (!structureGroup || typeof structureGroup.traverse !== 'function') return map;
+
+    structureGroup.traverse((obj) => {
+      const info = obj?.userData?.beamInfo;
+      if (!info) return;
+      const pair = BeamPDFReporter._normalizeConnPair(info);
+      if (!pair || !Number.isFinite(pair.kLo) || !Number.isFinite(pair.kHi)) return;
+      const key = `${pair.kLo}-${pair.kHi}`;
+      map.set(key, (map.get(key) || 0) + 1);
+    });
+    return map;
   }
 
   static _pickRepresentativeBeams(structureGroup) {
@@ -141,7 +163,10 @@ export class BeamPDFReporter {
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(11);
 
-    const kVis = state.cutActive ? (state.N - state.cutLevel + 1) : (state.N + 1);
+    // K visibles segun logica de la app:
+    // - Con corte activo: N - cutLevel (ej: N=11, cut=4 => 7)
+    // - Sin corte: K visibles = N (no N+1)
+    const kVis = state.cutActive ? (state.N - state.cutLevel) : (state.N);
     const floorDiameter = state.cutActive ? state.floorDiameter : state.Dmax;
     const visibleHeight = state.cutActive ? (state.Htotal - state.cutLevel * state.h1) : state.Htotal;
 
@@ -199,7 +224,7 @@ export class BeamPDFReporter {
 
   static _beamCountsByLevel() {
     const N = Number(state.N) || 0;
-    const kVis = state.cutActive ? (state.N - state.cutLevel + 1) : (state.N + 1);
+    const kVis = state.cutActive ? (state.N - state.cutLevel) : (state.N);
     const lines = [];
 
     if (kVis <= 0 || N <= 0) {
@@ -229,7 +254,7 @@ export class BeamPDFReporter {
     return { lines, total, kVis };
   }
 
-  static async _addBeamPage(doc, item, pageIndex, sceneManager) {
+  static async _addBeamPage(doc, item, pageIndex, sceneManager, beamCountMap) {
     const margin = 14;
     const x0 = margin;
     const y0 = margin;
@@ -255,20 +280,21 @@ export class BeamPDFReporter {
     //   (ej: k0<->k1 y k(kMax-1)<->kMax cuando NO hay corte).
     // - Si hay corte activo: la viga del suelo visible es N (k0<->k0) y el polo superior es N.
     // - El resto (entre niveles internos) es 2N.
-    let unitsCount = 2 * Ncount;
-    if (pair && Number.isFinite(pair.kLo) && Number.isFinite(pair.kHi)) {
-      const kVis = state.cutActive ? (state.N - state.cutLevel + 1) : (state.N + 1);
-      const kMax = Math.max(0, kVis - 1);
-
-      const touchesLowerPole = (!state.cutActive && pair.kLo === 0);
-      const touchesUpperPole = (pair.kHi === kMax);
-      const isFloorBeam = (state.cutActive && pair.kLo === 0 && pair.kHi === 0);
-
-      if (touchesLowerPole || touchesUpperPole || isFloorBeam) {
-        unitsCount = Ncount;
-      }
-    }
-    doc.text(`Viga k${item.kVisible} (${unitsCount} unidades)`, x0, y0);
+    // Cantidad real de instancias de esta viga en la estructura visible (por par de niveles).
+let unitsCount = 2 * Ncount;
+if (pair && Number.isFinite(pair.kLo) && Number.isFinite(pair.kHi) && beamCountMap instanceof Map) {
+  const key = `${pair.kLo}-${pair.kHi}`;
+  const real = beamCountMap.get(key);
+  if (Number.isFinite(real) && real > 0) unitsCount = real;
+} else if (pair && Number.isFinite(pair.kLo) && Number.isFinite(pair.kHi)) {
+  // Fallback (si no hay mapa): polos/suelo N, resto 2N.
+  const kMaxIndex = Number(state.N) || 0;
+  const touchesLowerPole = (!state.cutActive && pair.kLo === 0);
+  const touchesUpperPole = (pair.kHi === kMaxIndex);
+  const isFloorBeam = (state.cutActive && pair.kLo === 0 && pair.kHi === 0);
+  if (touchesLowerPole || touchesUpperPole || isFloorBeam) unitsCount = Ncount;
+}
+doc.text(`Viga k${item.kVisible} (${unitsCount} unidades)`, x0, y0);
 
     // Conectividad (si hay datos validos: kLo <-> kHi)
     const connA = pair ? pair.nameLo : (info?.a?.name || 'k?');
