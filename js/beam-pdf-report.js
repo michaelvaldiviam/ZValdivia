@@ -249,8 +249,25 @@ export class BeamPDFReporter {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(14);
     const Ncount = Number(state.N) || 0;
-    const kVisCount = state.cutActive ? (state.N - state.cutLevel + 1) : (state.N + 1);
-    const unitsCount = (item.kVisible === 0 || item.kVisible === (kVisCount - 1)) ? Ncount : (2 * Ncount);
+    // Conteo de unidades por tipo de viga (regla del usuario):
+    // - En los polos siempre hay N vigas.
+    //   En el PDF estas aparecen como vigas que conectan el polo con el primer/ultimo nivel visible
+    //   (ej: k0<->k1 y k(kMax-1)<->kMax cuando NO hay corte).
+    // - Si hay corte activo: la viga del suelo visible es N (k0<->k0) y el polo superior es N.
+    // - El resto (entre niveles internos) es 2N.
+    let unitsCount = 2 * Ncount;
+    if (pair && Number.isFinite(pair.kLo) && Number.isFinite(pair.kHi)) {
+      const kVis = state.cutActive ? (state.N - state.cutLevel + 1) : (state.N + 1);
+      const kMax = Math.max(0, kVis - 1);
+
+      const touchesLowerPole = (!state.cutActive && pair.kLo === 0);
+      const touchesUpperPole = (pair.kHi === kMax);
+      const isFloorBeam = (state.cutActive && pair.kLo === 0 && pair.kHi === 0);
+
+      if (touchesLowerPole || touchesUpperPole || isFloorBeam) {
+        unitsCount = Ncount;
+      }
+    }
     doc.text(`Viga k${item.kVisible} (${unitsCount} unidades)`, x0, y0);
 
     // Conectividad (si hay datos validos: kLo <-> kHi)
