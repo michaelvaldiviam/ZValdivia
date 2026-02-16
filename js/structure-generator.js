@@ -5,11 +5,11 @@ import { getRingVertex } from './geometry.js';
 /**
  * Genera una estructura 3D para conectores:
  * - Un cilindro en cada nodo visible (eje = vector directriz inward).
- * - Una viga rectangular por arista única (perfil BxA) con bisel en ambos extremos
- *   según el vector directriz de cada extremo.
+ * - Una viga rectangular por arista unica (perfil BxA) con bisel en ambos extremos
+ *   segun el vector directriz de cada extremo.
  *
  * Unidades:
- * - Entradas en milímetros, se convierten a metros.
+ * - Entradas en milimetros, se convierten a metros.
  */
 export class StructureGenerator {
   /**
@@ -18,7 +18,7 @@ export class StructureGenerator {
   constructor(targetGroup) {
     this.group = targetGroup;
 
-    // Materiales (se pueden afinar después)
+    // Materiales (se pueden afinar despues)
     this.matConnector = new THREE.MeshStandardMaterial({
       color: 0x22c55e,
       metalness: 0.15,
@@ -62,13 +62,13 @@ export class StructureGenerator {
     const cylRadius = Math.max(0.0005, cylDiameter / 2);
     const startKNode = cutActive ? cutLevel : 0;
 
-    // 1) Construir caras visibles (triángulos/quads) en coordenadas del mundo (sin aplicar shift del mainGroup)
+    // 1) Construir caras visibles (triangulos/quads) en coordenadas del mundo (sin aplicar shift del mainGroup)
     const faces = this._buildVisibleFaces();
 
-    // 2) Calcular normales inward por cara y acumular incidencia por vértice
+    // 2) Calcular normales inward por cara y acumular incidencia por vertice
     const { vertexMap, edgeMap } = this._buildAdjacencyFromFaces(faces);
 
-    // 3) Directriz por vértice (suma de normales inward)
+    // 3) Directriz por vertice (suma de normales inward)
     for (const v of vertexMap.values()) {
       const sum = new THREE.Vector3();
       for (const n of v.faceNormalsInward) sum.add(n);
@@ -78,7 +78,7 @@ export class StructureGenerator {
 
     // 4) Cilindros por nodo visible
     const cylGeom = new THREE.CylinderGeometry(cylRadius, cylRadius, cylDepth, 20, 1, false);
-    // CylinderGeometry está alineada a +Y por defecto
+    // CylinderGeometry esta alineada a +Y por defecto
     const axisY = new THREE.Vector3(0, 1, 0);
 
     for (const [key, v] of vertexMap.entries()) {
@@ -93,17 +93,21 @@ export class StructureGenerator {
       mesh.position.copy(pos).addScaledVector(dir, cylDepth / 2);
       mesh.quaternion.copy(q);
       mesh.name = `connector_k${this._kVisible(k)}`;
+      // OBJ faces (caps + sides) with outward normals
+      const cdata = this._buildCylinderObjData(cylRadius, cylDepth, 20);
+      mesh.userData.objVertices = cdata.objVertices;
+      mesh.userData.objFaces = cdata.objFaces;
       this.group.add(mesh);
     }
 
-    // 5) Vigas por arista única
+    // 5) Vigas por arista unica
     let beamCounter = 0;
     for (const e of edgeMap.values()) {
       const a = vertexMap.get(e.aKey);
       const b = vertexMap.get(e.bKey);
       if (!a || !b) continue;
 
-      // Sólo aristas con ambos extremos visibles
+      // Solo aristas con ambos extremos visibles
       if (cutActive && (a.k < cutLevel || b.k < cutLevel)) continue;
 
       const pA = a.pos;
@@ -122,12 +126,12 @@ export class StructureGenerator {
       const pB2 = pB.clone().addScaledVector(dir, -trimB);
       if (pA2.distanceTo(pB2) < Math.max(beamWidth, beamHeight) * 0.5) continue;
 
-      // Bisel según directrices de cada extremo
+      // Bisel segun directrices de cada extremo
       const geom = this._createBeveledBeamGeometry({
         pA: pA2,
         pB: pB2,
         edgeDir: dir,
-        // Origen del cilindro (la línea eje pasa por el nodo). Necesario para
+        // Origen del cilindro (la linea eje pasa por el nodo). Necesario para
         // construir el plano tangente correcto en cada extremo.
         originA: pA,
         originB: pB,
@@ -139,30 +143,35 @@ export class StructureGenerator {
       });
       if (!geom) continue;
 
-      // geom puede traer metadata para exportación en QUADS
+      // geom puede traer metadata para exportacion en QUADS
       const g = geom.geometry ? geom.geometry : geom;
       const m = new THREE.Mesh(g, this.matBeam.clone());
       if (geom.objQuads && geom.objVertices) {
         m.userData.objQuads = geom.objQuads;
         m.userData.objVertices = geom.objVertices;
       }
+      if (Array.isArray(geom.objFaces) && Array.isArray(geom.objVertices)) {
+        m.userData.objFaces = geom.objFaces;
+        m.userData.objVertices = geom.objVertices;
+      }
 
-      // Metadata útil para reportes (PDF) y futuros exports
+      // Metadata util para reportes (PDF) y futuros exports
       const aName = `k${this._kVisible(a.k)}`;
       const bName = `k${this._kVisible(b.k)}`;
       m.userData.beamInfo = {
         kVisible: this._kVisible(Math.max(a.k, b.k)),
         a: { name: aName, k: a.k, pos: pA2.clone() },
         b: { name: bName, k: b.k, pos: pB2.clone() },
-        // Guardar directrices y dirección de arista para reportes (Ang(d))
+        // Guardar directrices y direccion de arista para reportes (Ang(d))
         aDir: a.directrix.clone(),
         bDir: b.directrix.clone(),
         edgeDir: dir.clone(),
-        // Ángulo entre arista y directriz en cada extremo (en grados)
+        // Angulo entre arista y directriz en cada extremo (en grados)
         angAdeg: THREE.MathUtils.radToDeg(Math.acos(THREE.MathUtils.clamp(Math.abs(dir.clone().normalize().dot(a.directrix.clone().normalize())), -1, 1))),
         angBdeg: THREE.MathUtils.radToDeg(Math.acos(THREE.MathUtils.clamp(Math.abs(dir.clone().negate().normalize().dot(b.directrix.clone().normalize())), -1, 1))),
         widthMm: Math.round(beamWidth * 1000),
         heightMm: Math.round(beamHeight * 1000),
+        faces: (geom.faces ? geom.faces : null),
       };
 
       // Nombre por nivel (usar el K mayor para aristas verticales)
@@ -211,7 +220,7 @@ export class StructureGenerator {
         const vRight = { k, i: idxR };
 
         if (cutActive && k === cutLevel) {
-          // Triángulo: anillo (k) con el anillo (k+1)
+          // Triangulo: anillo (k) con el anillo (k+1)
           const vTop = { k: k + 1, i };
           faces.push([vLeft, vRight, vTop]);
         } else {
@@ -271,7 +280,7 @@ export class StructureGenerator {
       const outTest = new THREE.Vector3().subVectors(centroid, center);
       if (n.dot(outTest) > 0) n.multiplyScalar(-1); // invertimos para inward
 
-      // Asignar a vértices
+      // Asignar a vertices
       for (const vv of verts) vv.faceNormalsInward.push(n.clone());
 
       // Aristas
@@ -297,11 +306,11 @@ export class StructureGenerator {
   }
 
   /**
-   * Devuelve cuánto se debe recortar una viga (a lo largo de la arista) para que
+   * Devuelve cuanto se debe recortar una viga (a lo largo de la arista) para que
    * su extremo toque la superficie lateral del cilindro del nodo.
    *
    * Modelo: cilindro de radio R con eje = directriz pasando por el nodo.
-   * Para la línea L(s)=nodo+e*s (e=arista unitaria), la distancia al eje es:
+   * Para la linea L(s)=nodo+e*s (e=arista unitaria), la distancia al eje es:
    *   dist = s*|e_perp|
    * donde e_perp es la componente de e perpendicular a la directriz.
    * Entonces s = R/|e_perp|.
@@ -323,6 +332,47 @@ export class StructureGenerator {
    * - Eje longitudinal: edgeDir
    * - "Alto" (height) crece hacia el interior, usando la directriz proyectada perpendicular al eje.
    */
+  _buildCylinderObjData(radius, height, segments) {
+    const seg = Math.max(3, segments | 0);
+    const h2 = height / 2;
+    const verts = [];
+
+    // bottom ring (y=-h/2)
+    for (let i = 0; i < seg; i++) {
+      const a = (i / seg) * Math.PI * 2;
+      verts.push(new THREE.Vector3(radius * Math.cos(a), -h2, radius * Math.sin(a)));
+    }
+    // top ring (y=+h/2)
+    for (let i = 0; i < seg; i++) {
+      const a = (i / seg) * Math.PI * 2;
+      verts.push(new THREE.Vector3(radius * Math.cos(a), +h2, radius * Math.sin(a)));
+    }
+
+    const faces = [];
+
+    // top cap: CCW when viewed from +Y (normal +Y)
+    const top = [];
+    for (let i = seg - 1; i >= 0; i--) top.push(seg + i);
+    faces.push(top);
+
+    // bottom cap: CW when viewed from +Y (normal -Y)
+    const bottom = [];
+    for (let i = 0; i < seg; i++) bottom.push(i);
+    faces.push(bottom);
+
+// sides: quads
+    for (let i = 0; i < seg; i++) {
+      const j = (i + 1) % seg;
+      const b0 = i;
+      const b1 = j;
+      const t1 = seg + j;
+      const t0 = seg + i;
+      faces.push([b0, t0, t1, b1]);
+    }
+
+    return { objVertices: verts, objFaces: faces };
+  }
+
   _createBeveledBeamGeometry({ pA, pB, edgeDir, originA, originB, axisA, axisB, width, height, cylRadius }) {
     const e = edgeDir.clone().normalize();
     const len = pA.distanceTo(pB);
@@ -333,7 +383,7 @@ export class StructureGenerator {
     originB = originB || pB;
 
     // ---- Marco local CONSISTENTE (evita vigas "torcidas") ----
-    // t = dirección de "alto" (hacia adentro) ⟂ e, usando la suma de directrices para estabilidad
+    // t = direccion de "alto" (hacia adentro)   e, usando la suma de directrices para estabilidad
     const uA = axisA.clone().normalize();
     const uB = axisB.clone().normalize();
     let t = this._projectPerp(uA.clone().add(uB), e);
@@ -368,8 +418,8 @@ export class StructureGenerator {
     ];
 
     // ---- Planos de bisel: la testa debe ser PARALELA a la directriz (u pertenece al plano) ----
-    // => normal n ⟂ u. Posicionamos el plano para que sea tangente al cilindro:
-    //    n · (x - origin) = R
+    // => normal n   u. Posicionamos el plano para que sea tangente al cilindro:
+    //    n   (x - origin) = R
     const R = (typeof cylRadius === 'number' && cylRadius > 0) ? cylRadius : 0;
 
     const dirFromA = new THREE.Vector3().subVectors(pB, pA).normalize(); // sale de A hacia B
@@ -381,7 +431,7 @@ export class StructureGenerator {
     let nA = radialA.lengthSq() < 1e-12 ? w.clone() : radialA.normalize();
     let nB = radialB.lengthSq() < 1e-12 ? w.clone() : radialB.normalize();
 
-    // Garantizar n ⟂ u (por estabilidad numérica)
+    // Garantizar n   u (por estabilidad numerica)
     nA = this._projectPerp(nA, uA);
     nB = this._projectPerp(nB, uB);
     if (nA.lengthSq() < 1e-12) nA = this._projectPerp(w, uA);
@@ -393,7 +443,7 @@ export class StructureGenerator {
     const planeA = { n: nA, origin: originA, d: R };
     const planeB = { n: nB, origin: originB, d: R };
 
-    // Intersección robusta: para cada una de las 4 aristas longitudinales (Ai->Bi),
+    // Interseccion robusta: para cada una de las 4 aristas longitudinales (Ai->Bi),
     // intersectar con el plano del extremo correspondiente.
     const intersectEdgeWithPlane = (Apt, Bpt, plane) => {
       const n = plane.n;
@@ -414,7 +464,7 @@ export class StructureGenerator {
       endPts.push(intersectEdgeWithPlane(cornersA0[i], cornersB0[i], planeB));
     }
 
-    // Validación: evitar inversión (start demasiado cerca/por detrás del end)
+    // Validacion: evitar inversion (start demasiado cerca/por detras del end)
     const axis = e; // largo
     const base = pA.clone();
     const projStart = startPts.map(p => axis.dot(new THREE.Vector3().subVectors(p, base)));
@@ -423,7 +473,7 @@ export class StructureGenerator {
     const minEnd = Math.min(...projEnd);
     if (minEnd - maxStart < Math.max(width, height) * 0.2) return null;
 
-    // Construir BufferGeometry (8 vértices): start (0-3) + end (4-7)
+    // Construir BufferGeometry (8 vertices): start (0-3) + end (4-7)
     const verts = [...startPts, ...endPts];
     const positions = new Float32Array(8 * 3);
     for (let i = 0; i < 8; i++) {
@@ -432,7 +482,7 @@ export class StructureGenerator {
       positions[i * 3 + 2] = verts[i].z;
     }
 
-    // 6 caras QUAD (export) - render: 12 triángulos
+    // 6 caras QUAD (export) - render: 12 triangulos
     const indices = [
       // start face (0,1,2,3)
       0, 1, 2, 0, 2, 3,
@@ -451,24 +501,49 @@ export class StructureGenerator {
     g.computeVertexNormals();
     g.computeBoundingSphere();
 
+    // Caras QUAD para export OBJ (regla mano derecha, normales hacia el exterior)
+    // Convencion local usada arriba:
+    //   e = eje longitudinal (A->B), t = "alto" hacia adentro, w = "ancho" (cara exterior pasa por la arista)
+    // Vertices:
+    //   start: 0(-w,0t),1(+w,0t),2(+w,+t),3(-w,+t)
+    //   end:   4(-w,0t),5(+w,0t),6(+w,+t),7(-w,+t)
+    // Winding requerido:
+    //   - Testa start mira hacia -e => [0,1,2,3]
+    //   - Testa end   mira hacia +e => [4,7,6,5]
+    //   - Cara exterior (t=0) mira hacia -t => [0,4,5,1]
+    //   - Cara w=+half mira hacia +w => [1,5,6,2]
+    //   - Cara interior (t=height) mira hacia +t => [2,6,7,3]
+    //   - Cara w=-half mira hacia -w => [3,7,4,0]
     const objQuads = [
       [0, 1, 2, 3],
-      [4, 5, 6, 7],
-      [0, 1, 5, 4],
-      [1, 2, 6, 5],
-      [2, 3, 7, 6],
-      [3, 0, 4, 7],
+      [4, 7, 6, 5],
+      [0, 4, 5, 1],
+      [1, 5, 6, 2],
+      [2, 6, 7, 3],
+      [3, 7, 4, 0],
     ];
+
+    const objFaces = objQuads.map(q => q.slice());
+    const faces = {
+      testaA: [0, 1, 2, 3],
+      testaB: [4, 7, 6, 5],
+      outer:  [0, 4, 5, 1],
+      sideP:  [1, 5, 6, 2],
+      inner:  [2, 6, 7, 3],
+      sideN:  [3, 7, 4, 0],
+    };
 
     return {
       geometry: g,
       objVertices: verts,
       objQuads,
+      objFaces,
+      faces,
     };
   }
 
   _projectPerp(v, axis) {
-    // v - axis*(v·axis)
+    // v - axis*(v axis)
     return v.clone().sub(axis.clone().multiplyScalar(v.dot(axis)));
   }
 }

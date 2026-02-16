@@ -3,15 +3,15 @@ import { state } from './state.js';
 import { getRingVertex } from './geometry.js';
 
 /**
- * Reporte PDF: 1 página por nivel K visible (1 viga representativa por nivel).
+ * Reporte PDF: 1 pagina por nivel K visible (1 viga representativa por nivel).
  *
  * Requisitos del usuario:
  * - Vista principal ortogonal horizontal mostrando la cara exterior (la que pasa por la arista).
- * - Líneas traseras en discontinua.
- * - Vista isométrica pequeña.
- * - Vista lateral ortogonal horizontal con líneas traseras discont.
+ * - Lineas traseras en discontinua.
+ * - Vista isometrica pequena.
+ * - Vista lateral ortogonal horizontal con lineas traseras discont.
  * - Etiquetas en extremos: nombre de conectores (k#) a los que conecta.
- * - Graduación desde el extremo izquierdo = 0 hacia la derecha, en mm sin decimales.
+ * - Graduacion desde el extremo izquierdo = 0 hacia la derecha, en mm sin decimales.
  */
 export class BeamPDFReporter {
   static async generateBeamsReport(structureGroup, sceneManager = null) {
@@ -83,7 +83,7 @@ export class BeamPDFReporter {
 
   /**
    * Normaliza el par de conectores para que quede (kLo <-> kHi).
-   * Retorna también qué extremo (a/b) corresponde a cada lado.
+   * Retorna tambien que extremo (a/b) corresponde a cada lado.
    */
   static _normalizeConnPair(info) {
     const aName = info?.a?.name;
@@ -101,7 +101,7 @@ export class BeamPDFReporter {
 
   /**
    * Fuerza que el eje e apunte de (kLo) -> (kHi) para que el reporte siempre
-   * muestre izquierda = nivel más abajo, derecha = nivel más arriba.
+   * muestre izquierda = nivel mas abajo, derecha = nivel mas arriba.
    * Mantiene base coherente (e y w se invierten juntos).
    */
   static _ensureBasisDirectionByLevels(basis, info, pair) {
@@ -109,7 +109,7 @@ export class BeamPDFReporter {
 
     const uA = info.a.pos.dot(basis.e);
     const uB = info.b.pos.dot(basis.e);
-    // Si el extremo "lo" (más abajo) queda a la derecha, invertimos.
+    // Si el extremo "lo" (mas abajo) queda a la derecha, invertimos.
     const loIsA = pair.keyLo === 'a';
     const loU = loIsA ? uA : uB;
     const hiU = loIsA ? uB : uA;
@@ -136,7 +136,7 @@ export class BeamPDFReporter {
   static _addCover(doc) {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(18);
-    doc.text('ZValdivia — Reporte de Vigas (Estructura)', 105, 30, { align: 'center' });
+    doc.text('ZValdivia - Reporte de Vigas (Estructura)', 105, 30, { align: 'center' });
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(11);
@@ -149,9 +149,9 @@ export class BeamPDFReporter {
       `N = ${state.N}`,
       `K visibles = ${kVis}`,
       `Dmax = ${state.Dmax.toFixed(3)} m`,
-      `Diámetro del piso = ${floorDiameter.toFixed(3)} m`,
+      `Diametro del piso = ${floorDiameter.toFixed(3)} m`,
       `Altura total visible = ${visibleHeight.toFixed(3)} m`,
-      `Ángulo a = ${state.aDeg.toFixed(2)}°`,
+      `Angulo a = ${state.aDeg.toFixed(2)}°`,
       state.cutActive ? `Corte activo: suelo en K(original)=${state.cutLevel} (vista: z=0)` : 'Corte inactivo',
     ];
 
@@ -185,7 +185,7 @@ export class BeamPDFReporter {
     const x0 = margin;
     const y0 = margin;
 
-    // Título de la app (arriba a la derecha)
+    // Titulo de la app (arriba a la derecha)
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(16);
     doc.text('ZValdivia 3D', 210 - margin, y0, { align: 'right' });
@@ -194,14 +194,14 @@ export class BeamPDFReporter {
     const info = mesh?.userData?.beamInfo || {};
 
     // Normalizar conectores para que el reporte sea consistente:
-    // izquierda = nivel más abajo (kLo), derecha = nivel más arriba (kHi)
+    // izquierda = nivel mas abajo (kLo), derecha = nivel mas arriba (kHi)
     const pair = this._normalizeConnPair(info);
 
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(14);
     doc.text(`Viga k${item.kVisible}`, x0, y0);
 
-    // Conectividad (si hay datos válidos: kLo <-> kHi)
+    // Conectividad (si hay datos validos: kLo <-> kHi)
     const connA = pair ? pair.nameLo : (info?.a?.name || 'k?');
     const connB = pair ? pair.nameHi : (info?.b?.name || 'k?');
 
@@ -216,11 +216,11 @@ export class BeamPDFReporter {
     const dimLine = `L = ${lenMm} mm${widthMm != null ? `, Ancho = ${widthMm} mm` : ''}${heightMm != null ? `, Alto = ${heightMm} mm` : ''}`;
     doc.text(dimLine, x0, y0 + 12);
 
-    // Obtener vértices (world)
+    // Obtener vertices (world)
     const vertsW = this._getBeamVerticesWorld(mesh);
     if (!vertsW) {
       doc.setFontSize(11);
-      doc.text('⚠️ No se pudo leer la geometría de la viga.', x0, y0 + 26);
+      doc.text('   No se pudo leer la geometria de la viga.', x0, y0 + 26);
       return;
     }
 
@@ -232,11 +232,11 @@ export class BeamPDFReporter {
     const basis = this._computeBeamBasis(vertsW, info, { widthMm, heightMm });
     if (!basis) {
       doc.setFontSize(11);
-      doc.text('⚠️ No se pudo calcular el sistema local de la viga.', x0, y0 + 26);
+      doc.text('   No se pudo calcular el sistema local de la viga.', x0, y0 + 26);
       return;
     }
 
-    // Forzar orientación izquierda->derecha por niveles (kLo -> kHi)
+    // Forzar orientacion izquierda->derecha por niveles (kLo -> kHi)
     this._ensureBasisDirectionByLevels(basis, info, pair);
 
     // Punto de referencia sobre la arista del zonohedro (cara exterior).
@@ -245,11 +245,11 @@ export class BeamPDFReporter {
       ? info.a.pos.clone().add(info.b.pos).multiplyScalar(0.5)
       : null;
 
-    // Etiquetas siempre: izquierda = nivel más abajo, derecha = nivel más arriba
+    // Etiquetas siempre: izquierda = nivel mas abajo, derecha = nivel mas arriba
     const leftLabel = pair ? pair.nameLo : (info?.a?.name || 'k?');
     const rightLabel = pair ? pair.nameHi : (info?.b?.name || 'k?');
 
-    // Ang(d): ángulo en cada extremo según el conector que quede a la izquierda/derecha
+    // Ang(d): angulo en cada extremo segun el conector que quede a la izquierda/derecha
     const aAng = Number.isFinite(info.angAdeg) ? info.angAdeg : null;
     const bAng = Number.isFinite(info.angBdeg) ? info.angBdeg : null;
     const leftAng = pair ? (pair.keyLo === 'a' ? aAng : bAng) : aAng;
@@ -259,28 +259,28 @@ export class BeamPDFReporter {
     const zomeBox = { x: 152, y: 92, w: 44, h: 36 };
     const sideBox = { x: 14, y: 132, w: 182, h: 60 };
 
-    // Vista principal: planta (Largo x Ancho) con biseles visibles (líneas ocultas en discontinua)
+    // Vista principal: planta (Largo x Ancho) con biseles visibles (lineas ocultas en discontinua)
     this._drawBeamPlanBevel(doc, vertsW, basis, {
       box: mainBox,
-      title: 'Vista ortogonal — Planta (ancho externo)',
+      title: 'Vista ortogonal - Planta (ancho externo)',
       leftLabel,
       rightLabel,
       leftAng,
       rightAng,
-      // Dimensiones declaradas (ayudan a identificar el eje de "ancho" aun si el orden de vértices varía)
+      // Dimensiones declaradas (ayudan a identificar el eje de "ancho" aun si el orden de vertices varia)
       widthMm,
       heightMm,
       // Punto de referencia en la arista del zonohedro para identificar cara exterior
       edgeMidWorld: edgeMid,
     });
 
-    // Vista isométrica (sin ocultas)
+    // Vista isometrica (sin ocultas)
     this._drawBeamIsometric(doc, vertsW, basis, isoBox, { leftLabel, rightLabel, edgeMidWorld: edgeMid });
 
-    // Título miniatura ubicación
+    // Titulo miniatura ubicacion
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
-    doc.text('Ubicación de la viga', zomeBox.x, zomeBox.y - 1);
+    doc.text('Ubicacion de la viga', zomeBox.x, zomeBox.y - 1);
 
 
     // Vista vertical del zome (igual al PDF de rombos) + flecha indicando el nivel
@@ -293,9 +293,9 @@ export class BeamPDFReporter {
     }
 
     // Vista lateral: Largo vs Alto
-    // Requisito: la línea superior debe corresponder a la cara exterior
+    // Requisito: la linea superior debe corresponder a la cara exterior
     // (la que pasa por la arista del zonohedro). Para eso forzamos el signo
-    // del eje vertical (t) según el punto medio de la arista.
+    // del eje vertical (t) segun el punto medio de la arista.
     let vAxisSide = basis.t.clone();
     if (edgeMid) {
       let mn = Infinity, mx = -Infinity;
@@ -305,7 +305,7 @@ export class BeamPDFReporter {
         if (s > mx) mx = s;
       }
       const sEdge = edgeMid.dot(vAxisSide);
-      // Si la arista está más cerca del mínimo, esa es la cara exterior.
+      // Si la arista esta mas cerca del minimo, esa es la cara exterior.
       // Queremos que esa cara quede "arriba" en papel => v grande.
       if (Math.abs(sEdge - mn) < Math.abs(sEdge - mx)) {
         vAxisSide.multiplyScalar(-1);
@@ -317,7 +317,7 @@ export class BeamPDFReporter {
       uAxis: basis.e,
       vAxis: vAxisSide,
       box: sideBox,
-      title: 'Vista lateral — Largo vs Alto',
+      title: 'Vista lateral - Largo vs Alto',
       showDashedHidden: true,
       leftLabel,
       rightLabel,
@@ -330,7 +330,7 @@ export class BeamPDFReporter {
     const uv = mesh?.userData?.objVertices;
     if (Array.isArray(uv) && uv.length === 8) return uv.map(v => v.clone());
 
-    // Fallback: leer posiciones de BufferGeometry (8 vértices)
+    // Fallback: leer posiciones de BufferGeometry (8 vertices)
     const pos = mesh?.geometry?.getAttribute?.('position');
     if (!pos || pos.count < 8) return null;
     const out = [];
@@ -344,7 +344,7 @@ export class BeamPDFReporter {
     if (!vertsW || vertsW.length < 4) return null;
 
     // ---------------------------------------------
-    // SISTEMA CANÓNICO (infalible incluso si ancho==alto)
+    // SISTEMA CANONICO (infalible incluso si ancho==alto)
     //  X = eje de la arista/viga (largo)
     //  Y = ancho (en la cara que contiene la arista del zonohedro)
     //  Z = normal de esa cara (alto), orientada de modo que el interior quede con Z negativo
@@ -364,7 +364,7 @@ export class BeamPDFReporter {
       e = new THREE.Vector3().subVectors(B, A);
     }
     if (!e) {
-      // Fallback: par de vértices más alejados
+      // Fallback: par de vertices mas alejados
       let bestI = 0, bestJ = 1, bestD2 = -1;
       for (let i = 0; i < vertsW.length; i++) {
         for (let j = i + 1; j < vertsW.length; j++) {
@@ -391,19 +391,20 @@ export class BeamPDFReporter {
     };
 
     // ---------------------------------------------
-    // 1) Detectar la cara que "contiene" la arista:
-    //    Tomamos los 4 vértices más cercanos a la recta AB (o al eje e si faltan A/B)
-    // ---------------------------------------------
-    let faceIdx = null;
-    if (vertsW.length >= 8) {
-      const idx = [...Array(vertsW.length).keys()];
-      idx.sort((i, j) => dist2ToLineAB(vertsW[i]) - dist2ToLineAB(vertsW[j]));
-      faceIdx = idx.slice(0, 4);
-    } else {
-      faceIdx = [0, 1, 2, 3].slice(0, Math.min(4, vertsW.length));
-    }
+    // 1) Detectar la cara que contiene la arista
+//    Si el generador entrega la cara exterior (LxW) en info.faces.outer, la usamos directamente.
+let faceIdx = null;
+if (info && info.faces && Array.isArray(info.faces.outer) && info.faces.outer.length === 4) {
+  faceIdx = info.faces.outer.slice();
+} else if (vertsW.length >= 8) {
+  const idx = [...Array(vertsW.length).keys()];
+  idx.sort((i, j) => dist2ToLineAB(vertsW[i]) - dist2ToLineAB(vertsW[j]));
+  faceIdx = idx.slice(0, 4);
+} else {
+  faceIdx = [0, 1, 2, 3].slice(0, Math.min(4, vertsW.length));
+}
 
-    const facePts = faceIdx.map(i => vertsW[i]);
+const facePts = faceIdx.map(i => vertsW[i]);
 
     // Centro de la cara exterior
     const faceCenter = new THREE.Vector3();
@@ -412,7 +413,7 @@ export class BeamPDFReporter {
 
     // ---------------------------------------------
     // 2) Normal robusta de esa cara (Z)
-    //    Elegimos 3 puntos no colineales de la cara (máxima estabilidad)
+    //    Elegimos 3 puntos no colineales de la cara (maxima estabilidad)
     // ---------------------------------------------
     const p0 = facePts[0];
     let p1 = facePts[1];
@@ -443,11 +444,11 @@ export class BeamPDFReporter {
       new THREE.Vector3().subVectors(p2, p0)
     );
 
-    // Asegurar z ⟂ e (por seguridad numérica)
+    // Asegurar z   e (por seguridad numerica)
     z.sub(e.clone().multiplyScalar(z.dot(e)));
     if (z.lengthSq() < 1e-12) {
-      // Fallback suave: PCA transversal en el plano ⟂ e
-      // (solo para evitar null; en la práctica A/B + cara válida evita caer aquí)
+      // Fallback suave: PCA transversal en el plano   e
+      // (solo para evitar null; en la practica A/B + cara valida evita caer aqui)
       const pts2 = vertsW.map(p => {
         const u = p.dot(e);
         const pp = p.clone().sub(e.clone().multiplyScalar(u));
@@ -485,7 +486,7 @@ export class BeamPDFReporter {
     if (w.lengthSq() < 1e-12) return null;
     w.normalize();
 
-    // Re-ortonormalizar X para evitar deriva numérica
+    // Re-ortonormalizar X para evitar deriva numerica
     const e2 = new THREE.Vector3().crossVectors(w, z);
     if (e2.lengthSq() < 1e-12) return null;
     e2.normalize();
@@ -495,7 +496,7 @@ export class BeamPDFReporter {
       w,
       t: z,           // "alto" / normal de la cara exterior
       c,
-      faceCenter,     // útil si quieres anclar z=0 en el futuro
+      faceCenter,     // util si quieres anclar z=0 en el futuro
       z0: faceCenter.dot(z),
     };
   }
@@ -509,7 +510,7 @@ export class BeamPDFReporter {
     if (!aPos || !bPos) return { leftName: aName, rightName: bName, leftKey: 'a', rightKey: 'b' };
 
     const d = bPos.clone().sub(aPos);
-    // Si b está hacia +e => a izquierda, b derecha
+    // Si b esta hacia +e => a izquierda, b derecha
     if (d.dot(eAxis) >= 0) return { leftName: aName, rightName: bName, leftKey: 'a', rightKey: 'b' };
     return { leftName: bName, rightName: aName, leftKey: 'b', rightKey: 'a' };
   }
@@ -542,11 +543,11 @@ static _edges() {
   }
 
   /**
-   * Construye 2 ejes candidatos en el plano ⟂ e (sección transversal),
-   * usando aristas reales de la geometría de la viga.
+   * Construye 2 ejes candidatos en el plano   e (seccion transversal),
+   * usando aristas reales de la geometria de la viga.
    *
-   * Evita depender del orden fijo de vértices (0-1 / 4-5), que en algunas vigas
-   * puede corresponder a otra dirección y colapsar la planta.
+   * Evita depender del orden fijo de vertices (0-1 / 4-5), que en algunas vigas
+   * puede corresponder a otra direccion y colapsar la planta.
    */
   static _computeCrossSectionAxesFromEdges(vertsW, eAxis) {
     const e = eAxis.clone().normalize();
@@ -561,7 +562,7 @@ static _edges() {
     }
     if (cand.length === 0) return null;
 
-    // ordenar por largo proyectado (preferimos aristas puras de sección)
+    // ordenar por largo proyectado (preferimos aristas puras de seccion)
     cand.sort((a, b) => b.len - a.len);
 
     const a = cand[0].dir.clone();
@@ -595,9 +596,9 @@ static _edges() {
   }
 
   /**
-   * Decide cuál eje transversal corresponde al "ancho" (planta) usando:
+   * Decide cual eje transversal corresponde al "ancho" (planta) usando:
    * - widthMm/heightMm si existen (preferimos el eje cuyo span se acerque a width)
-   * - o, si no existen, el menor span como ancho (típico: ancho < alto)
+   * - o, si no existen, el menor span como ancho (tipico: ancho < alto)
    */
   static _pickWidthAxisForPlan(vertsW, eAxis, widthMm, heightMm) {
     const axes = this._computeCrossSectionAxesFromEdges(vertsW, eAxis);
@@ -635,22 +636,22 @@ static _edges() {
   }
 
   /**
-   * Vista en planta (u=eje de viga, v=ancho), mostrando bisel por líneas de corte:
+   * Vista en planta (u=eje de viga, v=ancho), mostrando bisel por lineas de corte:
    * - Contorno visible: cara exterior (t=min)
-   * - Línea oculta (discontinua): intersección del bisel con la cara interior (t=max)
+   * - Linea oculta (discontinua): interseccion del bisel con la cara interior (t=max)
    *
-   * Esta vista coincide con la referencia del usuario: el “ancho” queda en planta
-   * y el bisel se ve como líneas internas (ocultas) cerca de los extremos.
+   * Esta vista coincide con la referencia del usuario: el "ancho" queda en planta
+   * y el bisel se ve como lineas internas (ocultas) cerca de los extremos.
    */
   static _drawBeamPlanBevel(doc, vertsW, basis, opts) {
     const { box, title, leftLabel, rightLabel, leftAng, rightAng } = opts;
 
-    // Margen interno del área de dibujo (mm en coordenadas del PDF)
+    // Margen interno del area de dibujo (mm en coordenadas del PDF)
     const pad = 7;
 
     const e = basis.e;
 
-    // --- Planta canónica ---
+    // --- Planta canonica ---
     // La base ya viene fijada de manera determinista:
     //   e = largo (arista)
     //   w = ancho (en la cara que contiene la arista)
@@ -666,22 +667,22 @@ static _edges() {
 
     // Eje de profundidad (alto) de planta: normal de la cara exterior
     const t = (basis?.t ? basis.t.clone().normalize() : new THREE.Vector3().crossVectors(wPlan, e).normalize());
-// Proyección local para planta:
+// Proyeccion local para planta:
     //   u = e (largo),
     //   v = w (ancho),
     //   z = t (hacia adentro)
     const P = vertsW.map(v3 => ({ u: v3.dot(e), v: v3.dot(wPlan), z: v3.dot(t) }));
 
-    // --- Selección dinámica de caras y extremos (NO depender del orden 0..7) ---
+    // --- Seleccion dinamica de caras y extremos (NO depender del orden 0..7) ---
     // exterior/interior:
     // La cara exterior es la que pasa por la arista del zonohedro (conectores A/B).
-    // Usamos edgeMidWorld (si existe) para decidir qué lado de z corresponde a "exterior",
+    // Usamos edgeMidWorld (si existe) para decidir que lado de z corresponde a "exterior",
     // y evitamos invertir por signo del eje t.
     const idxAll = [0, 1, 2, 3, 4, 5, 6, 7];
 
     let outerIdx = null;
     let innerIdx = null;
-    if (opts?.edgeMidWorld && opts.edgeMidWorld.isVector3) {
+	    if (opts?.edgeMidWorld && opts.edgeMidWorld.isVector3) {
       const zRef = opts.edgeMidWorld.dot(t);
       const byDist = idxAll.slice().sort((i, j) =>
         Math.abs(P[i].z - zRef) - Math.abs(P[j].z - zRef)
@@ -689,10 +690,11 @@ static _edges() {
       outerIdx = byDist.slice(0, 4);
       innerIdx = byDist.slice(4, 8);
     } else {
-      // Fallback: por profundidad z
-      const sortedByZ = idxAll.slice().sort((i, j) => P[i].z - P[j].z);
-      outerIdx = sortedByZ.slice(0, 4);
-      innerIdx = sortedByZ.slice(4, 8);
+	      // Fallback: por profundidad z
+	      // Convencion canonica: cara exterior => z mas alto; interior => z negativo.
+	      const sortedByZ = idxAll.slice().sort((i, j) => P[i].z - P[j].z); // asc
+	      innerIdx = sortedByZ.slice(0, 4);
+	      outerIdx = sortedByZ.slice(4, 8);
     }
 
     // extremos: por u (eje largo)
@@ -704,10 +706,11 @@ static _edges() {
     let leftDash = intersect(innerIdx, endAIdx);
     let rightDash = intersect(innerIdx, endBIdx);
 
-    const pick2MostInner = (endIdx) => {
-      const s = endIdx.slice().sort((i, j) => P[j].z - P[i].z); // z grande = más adentro
-      return s.slice(0, 2);
-    };
+	    const pick2MostInner = (endIdx) => {
+	      // Convencion canonica: interior => z mas NEGATIVO.
+	      const s = endIdx.slice().sort((i, j) => P[i].z - P[j].z); // mas negativo primero
+	      return s.slice(0, 2);
+	    };
     if (leftDash.length !== 2) leftDash = pick2MostInner(endAIdx);
     if (rightDash.length !== 2) rightDash = pick2MostInner(endBIdx);
 
@@ -724,65 +727,46 @@ static _edges() {
     // Largo real (mm, sin decimales) para decidir si aplicamos "vista rota"
     const lengthMm = Math.round(spanU * 1000);
 
-    // Título
+    // Titulo
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(10);
-    // Un poco más arriba para evitar que choque con las etiquetas (kX y Ang(d))
+    // Un poco mas arriba para evitar que choque con las etiquetas (kX y Ang(d))
     doc.text(title, box.x, box.y - 6);
 
-    // --- Break dinámico (vista rota) ---
-    // El ángulo del bisel afecta cuánto "corre" la testa en u. Estimamos ese avance usando
-    // la dispersión de u en los 4 vértices de cada extremo.
+    // --- Vista rota (planta): tamano estable en papel ---
+    // Regla: primero asegurar buen tamano (llenar altura disponible) manteniendo proporcion,
+    // y luego omitir el cuerpo mostrando extremos + "...".
+    // El largo visible de cada extremo en el PDF debe ser >= 2x el recorrido horizontal del bisel.
+
+    // --- Escala y "vista rota" ancladas a los EXTREMOS ---
+    // Cuando spanV es muy pequeno, scaleByV se dispara y el recorte puede comerse las lineas
+    // discontinuas del bisel. Para evitarlo:
+    //   1) medimos el recorrido horizontal real del bisel en cada extremo (en u)
+    //   2) fijamos keepWorld = 2x ese recorrido (regla solicitada)
+    //   3) limitamos la escala por el ancho disponible para que esos extremos quepan
+    const scaleByV = (box.h - 2 * pad) / spanV;
+
+    // Recorrido horizontal del bisel en cada extremo (mundo): rango de u dentro del extremo
+    const endA_uMin = Math.min(...endAIdx.map(i => P[i].u));
     const endA_uMax = Math.max(...endAIdx.map(i => P[i].u));
     const endB_uMin = Math.min(...endBIdx.map(i => P[i].u));
-    const needLeft  = Math.max(0, endA_uMax - minU);
-    const needRight = Math.max(0, maxU - endB_uMin);
+    const endB_uMax = Math.max(...endBIdx.map(i => P[i].u));
+    const bevelRunLeftW  = Math.max(1e-9, endA_uMax - endA_uMin);
+    const bevelRunRightW = Math.max(1e-9, endB_uMax - endB_uMin);
 
-    let broken = lengthMm > 900; // umbral
-    /* keepWorld: cuánto material real dejamos en cada extremo en vista rota.
-       Debe cubrir el bisel (needLeft/needRight) pero ser lo más pequeño posible
-       para permitir una escala mayor sin distorsionar el dibujo. */
-    const minKeepWorld = 0.06;   // 60 mm
-    const extraWorld = 0.020;    // 20 mm
-    let keepWorld = Math.max(minKeepWorld, needLeft + extraWorld, needRight + extraWorld);
+    // Regla: largo de extremo = 2x recorrido horizontal del bisel (+ minimo absoluto)
+    const minKeepWorldAbs = 0.08; // 80mm
+    let keepWorld = Math.max(minKeepWorldAbs, 2 * bevelRunLeftW, 2 * bevelRunRightW);
+    let broken = (spanU > (2 * keepWorld + 1e-9));
+    if (!broken) keepWorld = spanU * 0.5;
 
-    // No permitir que los extremos se coman todo
-    keepWorld = Math.min(keepWorld, spanU * 0.42);
-    if (keepWorld * 2 >= spanU * 0.92) broken = false;
-
-    // Escalas// Escalas (UNIFORME para preservar ángulos medibles en papel)
-const scaleByV = (box.h - 2 * pad) / spanV;
-const scaleByU = (box.w - 2 * pad) / spanU;
-// Espacio del quiebre ("...") en papel.
-const gapPaper = 4; // mm
-
-// Evitar plantas demasiado delgadas SIN distorsión (ángulos deben mantenerse reales).
-// En vez de escalar V por separado, forzamos una escala mínima UNIFORME y, si hace falta,
-// activamos break.
-const minVpaper = 6; // mm mínimos de espesor visible en planta
-const minScaleForThickness = minVpaper / spanV;
-
-// Si la escala por ancho (U) dejaría la viga demasiado delgada, forzar vista rota.
-if (!broken && scaleByU < minScaleForThickness && lengthMm > 220) {
-  broken = true;
-}
-
-let scale;
-if (!broken) {
-  scale = Math.min(scaleByV, scaleByU);
-  // Intentar subir escala para lograr el espesor mínimo, limitado por alto.
-  scale = Math.min(scaleByV, Math.max(scale, minScaleForThickness));
-} else {
-  const availW = (box.w - 2 * pad - gapPaper);
-  const requiredMinKeep = Math.max(minKeepWorld, needLeft + extraWorld, needRight + extraWorld);
-  const keepMaxForMinThickness = availW / (2 * Math.max(1e-9, minScaleForThickness));
-  // Reducir keepWorld si hay margen, para permitir mayor escala (sin bajar de lo requerido por bisel).
-  keepWorld = Math.max(requiredMinKeep, Math.min(keepWorld, keepMaxForMinThickness));
-
-  const scaleByEnds = availW / (2 * keepWorld);
-  scale = Math.min(scaleByV, scaleByEnds);
-  // Si todavía queda delgada, no hay espacio suficiente; se respeta escala máxima posible sin distorsión.
-}
+    // Limitar escala por ancho para que los extremos no se recorten (prioriza extremos)
+    const gapPaper = 6;
+    const availW = Math.max(1, box.w - 2 * pad - gapPaper);
+    const scaleByW = broken
+      ? (availW / Math.max(1e-9, 2 * keepWorld))
+      : (availW / Math.max(1e-9, spanU));
+    let scale = Math.min(scaleByV, scaleByW);
     const xLeft0 = box.x + pad;
     const xRight0 = box.x + box.w - pad;
 
@@ -826,7 +810,7 @@ if (!broken) {
     doc.setDrawColor(20);
     doc.setLineWidth(0.6);
 
-    // Contorno visible: cara exterior (cuadrilátero ordenado en (u,v))
+    // Contorno visible: cara exterior (cuadrilatero ordenado en (u,v))
     const orderQuad = (idxArr) => {
       const cx = idxArr.reduce((s, i) => s + P[i].u, 0) / idxArr.length;
       const cy = idxArr.reduce((s, i) => s + P[i].v, 0) / idxArr.length;
@@ -843,27 +827,32 @@ if (!broken) {
       drawSeg(P[i0], P[i1], false);
     }
 
-    // Líneas ocultas (discontinuas) que expresan el bisel en planta:
-    // conectan los 2 vértices "internos" de cada extremo.
+    // Lineas ocultas (discontinuas) que expresan el bisel en planta:
+    // conectan los 2 vertices "internos" de cada extremo.
     doc.setDrawColor(60);
     doc.setLineWidth(0.35);
     drawSeg(P[leftDash[0]], P[leftDash[1]], true);
     drawSeg(P[rightDash[0]], P[rightDash[1]], true);
     doc.setLineDashPattern([], 0);
 
-    // Ellipsis centrado en la viga (no en la caja)
+	    // No extender lineas del cuerpo: dejar el vacio central claro.
+	
+	    // Ellipsis SIEMPRE centrado en el vacio de la viga (zona omitida) y en el centro del ancho visible
     if (broken) {
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(14);
+      // Centro horizontal: punto medio del espacio omitido entre extremos
       const midX = (xLeftEnd + xRightStart) / 2;
-      const midY = box.y + pad + (spanV * scale) / 2;
-      doc.text('...', midX, midY, { align: 'center' });
+      // Centro vertical: mitad del ancho proyectado de la viga
+      const midV = (minV + maxV) / 2;
+      const midY = mapY(midV);
+      doc.text('...', midX, midY, { align: 'center', baseline: 'middle' });
     }
 
     // Etiquetas de conectores + Ang(d) en extremos
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
-    // Bajar las etiquetas ligeramente para separar del título
+    // Bajar las etiquetas ligeramente para separar del titulo
     doc.text(String(leftLabel || ''), box.x, box.y + 0.5, { align: 'left' });
     doc.text(String(rightLabel || ''), box.x + box.w, box.y + 0.5, { align: 'right' });
 
@@ -878,7 +867,7 @@ if (!broken) {
     const { viewDir, uAxis, vAxis, box, title, showDashedHidden, leftLabel, rightLabel, leftAng, rightAng } = opts;
     const edges = this._edges();
 
-    // Proyección a 2D: u (horizontal), v (vertical); depth para decidir ocultas
+    // Proyeccion a 2D: u (horizontal), v (vertical); depth para decidir ocultas
     const pts = vertsW.map(p => ({
       u: p.dot(uAxis),
       v: p.dot(vAxis),
@@ -897,10 +886,10 @@ if (!broken) {
     const spanU = Math.max(1e-9, maxU - minU);
     const spanV = Math.max(1e-9, maxV - minV);
 
-    // Título
+    // Titulo
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(10);
-    // Un poco más arriba para no... 
+    // Un poco mas arriba para no... 
     doc.text(title, box.x, box.y - 6);
 
     // Labels + Ang(d)
@@ -914,50 +903,48 @@ if (!broken) {
     if (Number.isFinite(leftAng)) doc.text(`Ang(d) ${leftAng.toFixed(1)}°`, box.x, box.y + 4.5, { align: 'left' });
     if (Number.isFinite(rightAng)) doc.text(`Ang(d) ${rightAng.toFixed(1)}°`, box.x + box.w, box.y + 4.5, { align: 'right' });
 
-    // --- Break (acortar cuerpo) ---
-        // --- Break dinámico según bisel (vista) ---
-    const endA_uMax = Math.max(pts[0].u, pts[1].u, pts[2].u, pts[3].u);
-    const endB_uMin = Math.min(pts[4].u, pts[5].u, pts[6].u, pts[7].u);
-    const needLeft  = Math.max(0, endA_uMax - minU);
-    const needRight = Math.max(0, maxU - endB_uMin);
+    // --- Vista rota (lateral): tamano estable en papel ---
+    // Igual que en planta: priorizamos que los extremos se vean grandes y legibles.
+    // El cuerpo se omite y se marca con "...".
 
     const pad = 7;
-    const lengthMm = spanU * 1000;
-    let broken = lengthMm > 900;
+    const scaleByV = (box.h - 2 * pad) / spanV;
+    let scale = scaleByV;
 
-    const minKeepWorld = 0.15; // 150mm
-    const extraWorld = 0.030;  // 30mm
-    // Mostrar más material en los extremos para reducir el vacío central en papel
-    let keepWorldDesired = Math.max(minKeepWorld, spanU * 0.30, needLeft + extraWorld, needRight + extraWorld);
-    keepWorldDesired = Math.min(keepWorldDesired, spanU * 0.48);
+    // Extremos por u (sin asumir orden de indices)
+    const idxAll = [0, 1, 2, 3, 4, 5, 6, 7];
+    const byU = idxAll.slice().sort((i, j) => pts[i].u - pts[j].u);
+    const endAIdx = byU.slice(0, 4);
+    const endBIdx = byU.slice(4, 8);
 
-    if (keepWorldDesired * 2 >= spanU * 0.92) broken = false;
+    // Recorrido horizontal del bisel en cada extremo (mundo): rango de u dentro del extremo
+    const endA_uMin = Math.min(...endAIdx.map(i => pts[i].u));
+    const endA_uMax = Math.max(...endAIdx.map(i => pts[i].u));
+    const endB_uMin = Math.min(...endBIdx.map(i => pts[i].u));
+    const endB_uMax = Math.max(...endBIdx.map(i => pts[i].u));
+    const bevelRunLeftW  = Math.max(1e-9, endA_uMax - endA_uMin);
+    const bevelRunRightW = Math.max(1e-9, endB_uMax - endB_uMin);
 
-    // Escala base por alto (v), pero permitimos reducirla para que se aprecien los biseles.
-    let scaleByV = (box.h - 2 * pad) / spanV;
+    // Lateral: queremos extremos un poco mas largos para reducir el espacio en blanco
+    const minKeepWorldAbs = 0.09; // 90mm
+    let keepWorld = Math.max(minKeepWorldAbs, 2 * bevelRunLeftW, 2 * bevelRunRightW);
+    keepWorld *= 1.15; // +15% (solo lateral)
+    let broken = (spanU > (2 * keepWorld + 1e-9));
+    if (!broken) keepWorld = spanU * 0.5;
 
-    // Espacio del quiebre ("...") en papel. Se reduce para evitar un gran vacío central.
-    const gapPaper = 8;
-    const xLeft0 = box.x + pad;
-    const xRight0 = box.x + box.w - pad;
+    // Limitar escala por ancho para que los extremos quepan (prioriza extremos)
+    const gapPaper = 6;
+    const availW = Math.max(1, box.w - 2 * pad - gapPaper);
+    const scaleByW = broken
+      ? (availW / Math.max(1e-9, 2 * keepWorld))
+      : (availW / Math.max(1e-9, spanU));
+    scale = Math.min(scaleByV, scaleByW);
 
-    let scale;
-    if (!broken) {
-      scale = Math.min(scaleByV, (box.w - 2 * pad) / spanU);
-    } else {
-      const scaleByEnds = (box.w - 2 * pad - gapPaper) / (2 * keepWorldDesired);
-      scale = Math.min(scaleByV, scaleByEnds);
-
-      const maxKeepWorld = Math.max(1e-9, (box.w - 2 * pad - gapPaper) / (2 * scale));
-      keepWorldDesired = Math.min(keepWorldDesired, maxKeepWorld);
-
-      if (keepWorldDesired * 2 >= spanU * 0.92) broken = false;
-      if (!broken) scale = Math.min(scaleByV, (box.w - 2 * pad) / spanU);
-    }
-
-    const keepWorld = broken ? keepWorldDesired : spanU;
     const leftCutU = minU + keepWorld;
     const rightCutU = maxU - keepWorld;
+
+    const xLeft0 = box.x + pad;
+    const xRight0 = box.x + box.w - pad;
 
     const xLeftEnd = !broken ? (xLeft0 + spanU * scale) : (xLeft0 + (leftCutU - minU) * scale);
     const xRightStart = !broken ? xLeftEnd : (xRight0 - (maxU - rightCutU) * scale);
@@ -991,30 +978,31 @@ if (!broken) {
       const right = this._clipSegmentToUInterval(a, b, rightCutU, maxU);
       if (right) drawSegmentMapped(right[0], right[1], dashed);
     };
-for (const [i0, i1] of edges) {
-      const a = pts[i0];
-      const b = pts[i1];
-      const isHidden = showDashedHidden && ((a.d + b.d) * 0.5) < dMid;
-      drawSegment(a, b, isHidden);
-    }
+	    for (const [i0, i1] of edges) {
+	      const a = pts[i0];
+	      const b = pts[i1];
+	      const isHidden = showDashedHidden && ((a.d + b.d) * 0.5) < dMid;
+	      drawSegment(a, b, isHidden);
+	    }
 
-    // Ellipsis en el medio (solo si break)
+	    // No extender lineas del cuerpo: dejar el vacio central claro.
+
+	    // Ellipsis SIEMPRE centrado en la caja (solo si break)
     if (broken) {
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(14);
-      const midX = (xLeftEnd + xRightStart) / 2;
-      const drawnH = spanV * scale;
-      const midY = box.y + pad + drawnH / 2;
-      doc.text('...', midX, midY, { align: 'center' });
+	      const midX = box.x + box.w / 2;
+	      const midY = box.y + box.h / 2;
+	      doc.text('...', midX, midY, { align: 'center', baseline: 'middle' });
     }
   }
 
 static _drawBeamIsometric(doc, vertsW, basis, box, opts = {}) {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
-    doc.text('Isométrica', box.x, box.y - 3);
+    doc.text('Isometrica', box.x, box.y - 3);
 
-    // Mantener solo el recuadro en isométrica
+    // Mantener solo el recuadro en isometrica
     doc.setDrawColor(120);
     doc.setLineWidth(0.2);
     doc.rect(box.x, box.y, box.w, box.h);
@@ -1030,24 +1018,24 @@ static _drawBeamIsometric(doc, vertsW, basis, box, opts = {}) {
     // Coordenadas locales: x = largo (e), y = ancho (w), z = alto.
 // Nota: el signo del eje "z" debe ser estable: "arriba" debe corresponder a la cara exterior
 // (la que pasa por la arista del zonohedro). Para evitar inversiones, elegimos el signo
-// que deja el punto medio de la arista lo más "arriba" posible dentro del rango de la viga.
+// que deja el punto medio de la arista lo mas "arriba" posible dentro del rango de la viga.
 const e = basis.e, w = basis.w, t = basis.t;
 
-// Elegir signo de Z (±t) de manera determinista
-let zSign = -1; // compatibilidad con la convención previa (z = -dot(t))
+// Elegir signo de Z ( t) de manera determinista
+let zSign = -1; // compatibilidad con la convencion previa (z = -dot(t))
 if (opts && opts.edgeMidWorld) {
   const dots = vertsW.map(p => p.dot(t));
   const mn = Math.min(...dots);
   const mx = Math.max(...dots);
   const dMid = opts.edgeMidWorld.dot(t);
 
-  // Evaluar ambas orientaciones y quedarnos con la que deja el punto medio más cerca de "arriba" (posición ~ 1)
+  // Evaluar ambas orientaciones y quedarnos con la que deja el punto medio mas cerca de "arriba" (posicion ~ 1)
   const span = Math.max(1e-9, mx - mn);
   const posNeg = ((-dMid) - (-mx)) / span; // cuando z = -dot(t): rango [-mx, -mn], arriba = max = -mn
   const posPos = (( dMid) - ( mn)) / span; // cuando z = +dot(t): rango [mn, mx], arriba = max = mx
 
-  // Queremos la orientación con mayor "posición hacia arriba"
-  // posNeg en [0,1] si dMid está dentro; posPos también.
+  // Queremos la orientacion con mayor "posicion hacia arriba"
+  // posNeg en [0,1] si dMid esta dentro; posPos tambien.
   if (posPos > posNeg) zSign = +1;
 }
 
@@ -1057,7 +1045,7 @@ const ptsL = vertsW.map(p => ({
   z: zSign * p.dot(t),
 }));
 
-    // Proyección isométrica determinista (dibujo técnico):
+    // Proyeccion isometrica determinista (dibujo tecnico):
     // X = (x - y)*cos30, Y = z + (x + y)*sin30
     const COS30 = 0.8660254037844386;
     const SIN30 = 0.5;
@@ -1088,25 +1076,25 @@ const ptsL = vertsW.map(p => ({
     }
   }
   static async _drawZomeVerticalView(doc, sceneManager, box, item, vertsW) {
-    // Misma vista vertical (ortográfica) usada en el PDF de rombos, pero insertada aquí
+    // Misma vista vertical (ortografica) usada en el PDF de rombos, pero insertada aqui
     // y con una flecha que marca el nivel al que pertenece la viga.
 
-    // Captura ortográfica lateral (XZ)
+    // Captura ortografica lateral (XZ)
     const img = await this._captureZomeOrthoXZ(sceneManager);
 
     // Insertar imagen (no transparente, fondo blanco)
     doc.addImage(img, 'JPEG', box.x, box.y, box.w, box.h);
 
-    // Recuadro (dibujar DESPUÉS de la imagen para que no quede “lavado”)
-    // y con la misma intensidad/estilo del recuadro de la isométrica.
+    // Recuadro (dibujar DESPUES de la imagen para que no quede "lavado")
+    // y con la misma intensidad/estilo del recuadro de la isometrica.
     doc.setDrawColor(120);
     doc.setLineWidth(0.2);
     doc.rect(box.x, box.y, box.w, box.h);
 
     // Determinar altura (Z) representativa del NIVEL de la viga.
-    // Importante: como las testas son biseladas, el centro geométrico no coincide necesariamente con
-    // el plano de unión con el conector. Para que la flecha caiga en el nivel correcto, cuantizamos
-    // cada extremo al múltiplo más cercano de h1 (altura entre niveles) y luego tomamos el punto medio.
+    // Importante: como las testas son biseladas, el centro geometrico no coincide necesariamente con
+    // el plano de union con el conector. Para que la flecha caiga en el nivel correcto, cuantizamos
+    // cada extremo al multiplo mas cercano de h1 (altura entre niveles) y luego tomamos el punto medio.
     if (!Array.isArray(vertsW) || vertsW.length !== 8) return;
 
     const cA = new THREE.Vector3();
@@ -1123,7 +1111,7 @@ const ptsL = vertsW.map(p => ({
       return m ? Number(m[1]) : NaN;
     };
 
-    // Preferimos el nombre de conector (k#) porque ya sigue la lógica visible del usuario.
+    // Preferimos el nombre de conector (k#) porque ya sigue la logica visible del usuario.
     const kNameA = parseKName(beamInfo?.a?.name);
     const kNameB = parseKName(beamInfo?.b?.name);
 
@@ -1137,14 +1125,14 @@ const ptsL = vertsW.map(p => ({
     const kLo = Math.min(kA, kB);
     const kHi = Math.max(kA, kB);
 
-    // Si ambos extremos están en el mismo nivel (ej: viga del piso con corte activo), apuntamos a ese nivel.
-    // Si no, apuntamos al punto medio entre niveles para indicar “entre kLo y kHi”.
+    // Si ambos extremos estan en el mismo nivel (ej: viga del piso con corte activo), apuntamos a ese nivel.
+    // Si no, apuntamos al punto medio entre niveles para indicar "entre kLo y kHi".
     const zMark = (kLo === kHi) ? (kLo * h1) : (0.5 * ((kLo + kHi) * h1));
     if (!Number.isFinite(zMark)) return;
 
     const levelLabel = (kLo === kHi) ? `k${kLo}` : `k${kLo} <-> k${kHi}`;
 
-    // Mapear zMark al sistema de la cámara ortográfica usada en la captura
+    // Mapear zMark al sistema de la camara ortografica usada en la captura
     const nivelesVisibles = state.cutActive ? (state.N - state.cutLevel) : state.N;
     const alturaVisible = state.h1 * nivelesVisibles;
     const frustumSize = state.Dmax * 1.5;
@@ -1178,20 +1166,20 @@ const ptsL = vertsW.map(p => ({
     const renderer = sceneManager && sceneManager.renderer;
     if (!renderer) throw new Error('renderer no disponible');
 
-    // ⚠️ IMPORTANTE: esta miniatura debe ser INDEPENDIENTE de los toggles del usuario
-    // (caras/aristas/polígonos/estructura). Construimos una escena temporal solo con
-    // caras sólidas (gris) usando la misma lógica geométrica del zonohedro.
+    //    IMPORTANTE: esta miniatura debe ser INDEPENDIENTE de los toggles del usuario
+    // (caras/aristas/poligonos/estructura). Construimos una escena temporal solo con
+    // caras solidas (gris) usando la misma logica geometrica del zonohedro.
     const tmpScene = new THREE.Scene();
     tmpScene.background = new THREE.Color(0xffffff);
 
-    // Luces simples para sombreado sólido (similar al reporte de rombos)
-    // Un poco más claro que antes (mejor legibilidad en PDF)
+    // Luces simples para sombreado solido (similar al reporte de rombos)
+    // Un poco mas claro que antes (mejor legibilidad en PDF)
     tmpScene.add(new THREE.AmbientLight(0xffffff, 0.92));
     const dir = new THREE.DirectionalLight(0xffffff, 0.60);
     dir.position.set(2, -3, 4);
     tmpScene.add(dir);
 
-    // Construir geometría de caras (rombos + tapa de corte) en coordenadas *visibles*
+    // Construir geometria de caras (rombos + tapa de corte) en coordenadas *visibles*
     const { N, h1, cutActive, cutLevel, Dmax } = state;
     const zShift = cutActive ? (-cutLevel * h1) : 0;
     const startK = cutActive ? cutLevel : 1;
@@ -1222,7 +1210,7 @@ const ptsL = vertsW.map(p => ({
           const vBottom = getRingVertex(k - 1, i);
           const vTop = getRingVertex(k + 1, i);
 
-          // Dos triángulos por rombo (misma triangulación que createRhombi)
+          // Dos triangulos por rombo (misma triangulacion que createRhombi)
           positions.push(
             vBottom.x, vBottom.y, vBottom.z + zShift,
             vRight.x, vRight.y, vRight.z + zShift,
@@ -1236,7 +1224,7 @@ const ptsL = vertsW.map(p => ({
       }
     }
 
-    // Tapa del plano de corte (para que el "suelo" exista incluso si el usuario desactivó caras)
+    // Tapa del plano de corte (para que el "suelo" exista incluso si el usuario desactivo caras)
     if (cutActive) {
       const z0 = (cutLevel * h1) + zShift; // debe quedar en 0
       const center = new THREE.Vector3(0, 0, z0);
@@ -1256,13 +1244,13 @@ const ptsL = vertsW.map(p => ({
     g.computeVertexNormals();
 
     const solidMat = new THREE.MeshLambertMaterial({
-      // Más claro (menos "gris pesado")
+      // Mas claro (menos "gris pesado")
       color: 0xF2F2F2,
       side: THREE.DoubleSide,
       transparent: false,
       opacity: 1.0,
       depthWrite: true,
-      // Empuja levemente las caras hacia atrás para que las aristas se vean nítidas
+      // Empuja levemente las caras hacia atras para que las aristas se vean nitidas
       // sin z-fighting.
       polygonOffset: true,
       polygonOffsetFactor: 1,
@@ -1273,17 +1261,17 @@ const ptsL = vertsW.map(p => ({
     tmpScene.add(solidMesh);
 
     // Aristas para distinguir bien los rombos/caras (similar a la vista del PDF de rombos)
-    // Usamos EdgesGeometry para NO dibujar la diagonal interna de la triangulación.
+    // Usamos EdgesGeometry para NO dibujar la diagonal interna de la triangulacion.
     const edgesGeom = new THREE.EdgesGeometry(g, 1);
     const edgesMat = new THREE.LineBasicMaterial({ color: 0x3a3a3a });
     const edges = new THREE.LineSegments(edgesGeom, edgesMat);
     tmpScene.add(edges);
 
-    // Guardar tamaño actual del renderer
+    // Guardar tamano actual del renderer
     const originalSize = new THREE.Vector2();
     renderer.getSize(originalSize);
 
-    // Cámara ortográfica cuadrada
+    // Camara ortografica cuadrada
     const aspect = 1;
     const frustumSize = Dmax * 1.5;
     const orthoCamera = new THREE.OrthographicCamera(
@@ -1319,7 +1307,7 @@ const ptsL = vertsW.map(p => ({
     renderer.setClearColor(originalClear, originalClearAlpha);
     renderer.setSize(originalSize.x, originalSize.y);
 
-    // Liberar geometría
+    // Liberar geometria
     g.dispose();
     solidMat.dispose();
     edgesGeom.dispose();

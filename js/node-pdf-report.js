@@ -2,12 +2,12 @@ import { state } from './state.js';
 import { NodeAnalyzer } from './node-analyzer.js';
 
 /**
- * Reporte PDF: 1 página por nodo (un vértice representativo por nivel K visible),
+ * Reporte PDF: 1 pagina por nodo (un vertice representativo por nivel K visible),
  * incluyendo:
  * - Nombre del nodo + nivel K visible
  * - Tabla de aristas salientes con conectividad
- * - Ángulos azimutales y separaciones (en el plano perpendicular al vector directriz)
- * - (Opcional) diagrama de proyección para orientar el conector
+ * - Angulos azimutales y separaciones (en el plano perpendicular al vector directriz)
+ * - (Opcional) diagrama de proyeccion para orientar el conector
  *
  * Requiere jsPDF cargado (window.jspdf).
  */
@@ -42,13 +42,13 @@ export class NodePDFReporter {
 
     const filename = `Nodos_Conector_ZValdivia_N${state.N}_a${state.aDeg.toFixed(2)}.pdf`;
     doc.save(filename);
-    console.log('✅ PDF de nodos generado');
+    console.log('  PDF de nodos generado');
   }
 
   static addCover(doc, data) {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(18);
-    doc.text('ZValdivia — Reporte de Nodos (Conectores)', 105, 30, { align: 'center' });
+    doc.text('ZValdivia - Reporte de Nodos (Conectores)', 105, 30, { align: 'center' });
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(11);
@@ -59,9 +59,9 @@ export class NodePDFReporter {
       `N = ${z.N}`,
       `K visibles = ${kVis}`,
       `Dmax = ${this.mm(z.Dmax, 3)} m`,
-      `Diámetro del piso = ${this.mm(z.floorDiameter || 0, 3)} m`,
+      `Diametro del piso = ${this.mm(z.floorDiameter || 0, 3)} m`,
       `Altura total visible = ${this.mm(z.visibleHeight, 3)} m`,
-      `Ángulo a = ${this.mm(z.aDeg, 2)}°`,
+      `Angulo a = ${this.mm(z.aDeg, 2)}deg`,
       z.cutActive ? `Corte activo: suelo en K(original)=${z.cutLevel} (vista: z=0)` : 'Corte inactivo',
     ];
 
@@ -114,9 +114,9 @@ export class NodePDFReporter {
     doc.text(`${kLabel}${extra}`, x0, y0 + 6);
 
     // Cantidad de conectores
-    // - En niveles normales: por simetría hay N conectores por nivel.
+    // - En niveles normales: por simetria hay N conectores por nivel.
     // - Polo superior (k=N): 1 conector.
-    // - Polo inferior (k=0): 1 conector SOLO si NO hay corte activo (si hay corte, el “suelo” reemplaza ese extremo).
+    // - Polo inferior (k=0): 1 conector SOLO si NO hay corte activo (si hay corte, el "suelo" reemplaza ese extremo).
     let qty = data.params.N;
     if (node.k === data.params.N) qty = 1;
     else if (node.k === 0) qty = data.params.cutActive ? data.params.N : 1;
@@ -128,10 +128,10 @@ export class NodePDFReporter {
     const normals = node.incidentFaceNormalsInward || [];
     let ny = y0 + 20;
 
-    // Diagrama (proyección) — caja superior derecha
+    // Diagrama (proyeccion) - caja superior derecha
     const diagramX = 120, diagramY = y0 + 18;
 
-    // Tamaño adaptativo (evita apretar demasiado cuando hay mucho texto)
+    // Tamano adaptativo (evita apretar demasiado cuando hay mucho texto)
     let diagramSize = 64;
     const edgeCount = (node.edges || []).length;
     if (edgeCount > 10 || normals.length > 4) diagramSize = 56;
@@ -139,7 +139,7 @@ export class NodePDFReporter {
 
     this.drawEdgeDiagram(doc, node, diagramX, diagramY, diagramSize);
 
-    // Tabla de aristas — comienza debajo de lo que termine más abajo (normales o diagrama)
+    // Tabla de aristas - comienza debajo de lo que termine mas abajo (normales o diagrama)
     const diagramBottom = diagramY + diagramSize;
     const tableTop = Math.max(ny + 8, diagramBottom + 6);
     this.drawEdgesTable(doc, node, x0, tableTop, W - 2 * margin);
@@ -153,13 +153,13 @@ export class NodePDFReporter {
     doc.setDrawColor(40);
     doc.setLineWidth(0.3);
 
-    // Sin marco (evita “recuadro” alrededor del conector)
-    // Círculo guía
+    // Sin marco (evita "recuadro" alrededor del conector)
+    // Circulo guia
     doc.circle(cx, cy, R, 'S');
 
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
-    doc.text('Proyección (exterior)', cx, y - 2, { align: 'center' });
+    doc.text('Proyeccion (exterior)', cx, y - 2, { align: 'center' });
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
@@ -167,7 +167,7 @@ export class NodePDFReporter {
     const edges = node.edges || [];
     const n = edges.length;
 
-    // Prepara ángulos (azimuth) y ordena para una lectura consistente.
+    // Prepara angulos (azimuth) y ordena para una lectura consistente.
     const fallbackAngles = [];
     for (let i = 0; i < n; i++) fallbackAngles.push((360 * i) / Math.max(1, n));
 
@@ -193,13 +193,13 @@ export class NodePDFReporter {
       doc.text(label, lx, ly, { align: 'center' });
     }
 
-    // 2) Ángulos Δ entre aristas: dibujar el valor en el medio de cada par consecutivo
-    // (en el mismo orden azimutal usado para separaciónToNextDeg)
+    // 2) Angulos   entre aristas: dibujar el valor en el medio de cada par consecutivo
+    // (en el mismo orden azimutal usado para separacionToNextDeg)
     if (items.length >= 2) {
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(7);
 
-      const rText = R * 0.62; // dentro del círculo para evitar chocar con etiquetas
+      const rText = R * 0.62; // dentro del circulo para evitar chocar con etiquetas
 
       for (let i = 0; i < items.length; i++) {
         const cur = items[i];
@@ -217,12 +217,12 @@ export class NodePDFReporter {
         if (typeof cur.e.separationToNextDeg === 'number') sep = cur.e.separationToNextDeg;
         else sep = (a2 - a1);
 
-        const text = `${sep.toFixed(1)}°`;
+        const text = `${sep.toFixed(1)}deg`;
 
         const tx = cx + rText * Math.cos(midRad);
         const ty = cy + rText * Math.sin(midRad);
 
-        // “halo” blanco para legibilidad sobre líneas
+        // "halo" blanco para legibilidad sobre lineas
         doc.setFillColor(255);
         doc.circle(tx, ty, 2.7, 'F');
         doc.setTextColor(0);
@@ -253,7 +253,7 @@ export class NodePDFReporter {
 
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(10);
-    doc.text('Aristas salientes (conectividad y ángulos)', x, y);
+    doc.text('Aristas salientes (conectividad y angulos)', x, y);
 
     y += 6;
     doc.setFontSize(8);
@@ -262,9 +262,9 @@ export class NodePDFReporter {
     doc.text('#', col.idx, y);
     doc.text('Conecta a', col.to, y);
     doc.text('Nivel dest', col.k, y);
-    doc.text('Az[°]', col.az, y);
-    doc.text('Δ[°]', col.sep, y);
-    doc.text('Ang(d)[°]', col.angd, y);
+    doc.text('Az[deg]', col.az, y);
+    doc.text(' [deg]', col.sep, y);
+    doc.text('Ang(d)[deg]', col.angd, y);
 
     doc.setLineWidth(0.2);
     doc.line(x, y + 1.5, x + width, y + 1.5);
@@ -274,21 +274,21 @@ export class NodePDFReporter {
 
     for (let i = 0; i < Math.min(edges.length, maxRows); i++) {
       const e = edges[i];
-      const az = (typeof e.azimuthDeg === 'number') ? this.mm(e.azimuthDeg, 1) : '—';
-      const sep = (typeof e.separationToNextDeg === 'number') ? this.mm(e.separationToNextDeg, 1) : '—';
+      const az = (typeof e.azimuthDeg === 'number') ? this.mm(e.azimuthDeg, 1) : '-';
+      const sep = (typeof e.separationToNextDeg === 'number') ? this.mm(e.separationToNextDeg, 1) : '-';
 
       doc.text(String(i + 1), col.idx, yy);
       doc.text(String(e.toDisplayId ?? e.to), col.to, yy);
-      const kdest = Number.isFinite(e.toVisibleKIndex) ? `k${e.toVisibleKIndex}` : String(e.toK ?? '—');
+      const kdest = Number.isFinite(e.toVisibleKIndex) ? `k${e.toVisibleKIndex}` : String(e.toK ?? '-');
       doc.text(kdest, col.k, yy);
       doc.text(String(az), col.az, yy);
       doc.text(String(sep), col.sep, yy);
-      const angd = (typeof e.angleToDirectiveDeg === 'number') ? this.mm(e.angleToDirectiveDeg, 1) : '—';
+      const angd = (typeof e.angleToDirectiveDeg === 'number') ? this.mm(e.angleToDirectiveDeg, 1) : '-';
       doc.text(String(angd), col.angd, yy);
 
       yy += rowH;
 
-      // Línea suave cada 5 filas
+      // Linea suave cada 5 filas
       if ((i + 1) % 5 === 0) {
         doc.setDrawColor(220);
         doc.line(x, yy - 3.5, x + width, yy - 3.5);

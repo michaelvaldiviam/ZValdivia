@@ -1,7 +1,7 @@
 import { state, updateStateCalculations } from './state.js';
 
 /**
- * Maneja compartir configuración mediante URL y JSON
+ * Maneja compartir configuracion mediante URL y JSON
  * Optimizado para GitHub Pages
  */
 export class ShareManager {
@@ -11,7 +11,7 @@ export class ShareManager {
   }
 
   /**
-   * Genera URL con parámetros de configuración
+   * Genera URL con parametros de configuracion
    */
   generateShareURL() {
     const params = new URLSearchParams({
@@ -32,7 +32,7 @@ export class ShareManager {
   }
 
   /**
-   * Carga configuración desde URL al iniciar la app
+   * Carga configuracion desde URL al iniciar la app
    */
   loadFromURL() {
     const params = new URLSearchParams(window.location.search);
@@ -75,7 +75,7 @@ export class ShareManager {
     
     try {
       await navigator.clipboard.writeText(url);
-      this.uiManager.showNotification('¡Enlace copiado! Compártelo para que otros vean tu diseño', 'success');
+      this.uiManager.showNotification(' Enlace copiado! Compartelo para que otros vean tu diseno', 'success');
       return true;
     } catch (err) {
       this.showFallbackCopy(url);
@@ -96,7 +96,7 @@ export class ShareManager {
     
     try {
       document.execCommand('copy');
-      this.uiManager.showNotification('¡Enlace copiado!', 'success');
+      this.uiManager.showNotification(' Enlace copiado!', 'success');
     } catch (err) {
       this.uiManager.showNotification('No se pudo copiar. Comparte esta URL: ' + url, 'info');
     }
@@ -105,7 +105,7 @@ export class ShareManager {
   }
 
   /**
-   * Exporta configuración como JSON
+   * Exporta configuracion como JSON
    */
   exportJSON() {
     const config = {
@@ -140,11 +140,11 @@ export class ShareManager {
     a.click();
     
     URL.revokeObjectURL(url);
-    this.uiManager.showNotification('Configuración exportada como JSON', 'success');
+    this.uiManager.showNotification('Configuracion exportada como JSON', 'success');
   }
 
   /**
-   * Importa configuración desde JSON
+   * Importa configuracion desde JSON
    */
   importJSON() {
     const input = document.createElement('input');
@@ -161,7 +161,7 @@ export class ShareManager {
           const config = JSON.parse(event.target.result);
           
           if (!config.version || !config.parameters) {
-            throw new Error('Archivo JSON inválido');
+            throw new Error('Archivo JSON invalido');
           }
 
           state.N = Math.max(3, Math.min(100, config.parameters.N));
@@ -187,7 +187,7 @@ export class ShareManager {
           this.sceneManager.fitCamera();
           this.uiManager.updateFacesCount();
           
-          this.uiManager.showNotification('Configuración cargada exitosamente', 'success');
+          this.uiManager.showNotification('Configuracion cargada exitosamente', 'success');
         } catch (err) {
           this.uiManager.showNotification('Error: ' + err.message, 'error');
         }

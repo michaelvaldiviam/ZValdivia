@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { state } from './state.js';               // Corrección de ruta
+import { state } from './state.js';               // Correccion de ruta
 import {
   createPolygons,
   createHelices,
@@ -14,7 +14,7 @@ import { StructureGenerator } from './structure-generator.js';
 import { StructureOBJExporter } from './export.js';
 
 /**
- * Configuración de la escena Three.js con optimizaciones de performance
+ * Configuracion de la escena Three.js con optimizaciones de performance
  */
 export class SceneManager {
   constructor(canvas) {
@@ -40,7 +40,7 @@ export class SceneManager {
       canvas: this.canvas,
       antialias: true,
       alpha: true,
-      powerPreference: 'high-performance' // Optimización para GPU
+      powerPreference: 'high-performance' // Optimizacion para GPU
     });
     this.renderer.setPixelRatio(Math.min(2, window.devicePixelRatio));
     this.renderer.setSize(window.innerWidth, window.innerHeight);
@@ -51,7 +51,7 @@ export class SceneManager {
 
   setupScene() {
     this.scene = new THREE.Scene();
-    // Background gradient más claro
+    // Background gradient mas claro
     const c2 = document.createElement('canvas');
     c2.width = 512;
     c2.height = 512;
@@ -81,31 +81,31 @@ export class SceneManager {
   }
 
   setupLights() {
-    // Luz ambiental más intensa
+    // Luz ambiental mas intensa
     this.ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
     this.scene.add(this.ambientLight);
 
-    // Luz direccional principal más intensa
+    // Luz direccional principal mas intensa
     this.mainLight = new THREE.DirectionalLight(0xffffff, 1.4);
     this.mainLight.position.set(10, -10, 20);
     this.scene.add(this.mainLight);
 
-    // Luz de relleno (rim light) más intensa
+    // Luz de relleno (rim light) mas intensa
     this.rimLight = new THREE.PointLight(0x3b82f6, 1.3);
     this.rimLight.position.set(-20, 10, 12);
     this.scene.add(this.rimLight);
 
-    // Luz de acento más intensa
+    // Luz de acento mas intensa
     this.fillLight = new THREE.PointLight(0xffaaee, 0.6);
     this.fillLight.position.set(20, 20, 5);
     this.scene.add(this.fillLight);
 
-    // Luz adicional desde abajo para iluminar más
+    // Luz adicional desde abajo para iluminar mas
     this.bottomLight = new THREE.PointLight(0xffffff, 0.8);
     this.bottomLight.position.set(0, 0, -10);
     this.scene.add(this.bottomLight);
 
-    // Luz hemisférica general
+    // Luz hemisferica general
     this.hemisphereLight = new THREE.HemisphereLight(0xffffff, 0x444444, 0.6);
     this.scene.add(this.hemisphereLight);
 
@@ -127,7 +127,7 @@ export class SceneManager {
 
   updateLighting() {
     if (state.colorByLevel) {
-      // Activar iluminación mejorada para modo color
+      // Activar iluminacion mejorada para modo color
       this.ambientLight.intensity = 0.9;
       this.mainLight.intensity = 1.6;
       this.rimLight.intensity = 1.5;
@@ -138,7 +138,7 @@ export class SceneManager {
       this.colorModeLight2.visible = true;
       this.colorModeLight3.visible = true;
     } else {
-      // Iluminación mejorada para modo normal
+      // Iluminacion mejorada para modo normal
       this.ambientLight.intensity = 0.7;
       this.mainLight.intensity = 1.4;
       this.rimLight.intensity = 1.3;
@@ -217,7 +217,7 @@ export class SceneManager {
 
     this.matPoint = new THREE.MeshBasicMaterial({ color: 0xff4444 });
 
-    // Material para las aristas de los rombos/triángulos
+    // Material para las aristas de los rombos/triangulos
     this.matEdge = new THREE.LineBasicMaterial({
       color: 0xffffff,
       opacity: 0.6,
@@ -242,7 +242,7 @@ export class SceneManager {
   }
 
   /**
-   * 🔥 OPTIMIZACIÓN: Método para solicitar reconstrucción (con throttling)
+   *   OPTIMIZACION: Metodo para solicitar reconstruccion (con throttling)
    */
   requestRebuild() {
     if (this.isRebuilding) {
@@ -254,7 +254,7 @@ export class SceneManager {
   }
 
   /**
-   * 🔥 OPTIMIZACIÓN #2: Método que ejecuta la reconstrucción con lazy loading
+   *   OPTIMIZACION #2: Metodo que ejecuta la reconstruccion con lazy loading
    */
   executeRebuild() {
     this.isRebuilding = true;
@@ -273,7 +273,7 @@ export class SceneManager {
       
       this.isRebuilding = false;
       
-      // Si hubo otra solicitud mientras reconstruíamos, ejecutarla
+      // Si hubo otra solicitud mientras reconstruiamos, ejecutarla
       if (this.rebuildRequested) {
         this.executeRebuild();
       }
@@ -281,17 +281,17 @@ export class SceneManager {
   }
 
   /**
-   * 🔥 OPTIMIZACIÓN #2: LAZY LOADING PROGRESIVO
-   * Construye la geometría en chunks para mantener UI responsive
+   *   OPTIMIZACION #2: LAZY LOADING PROGRESIVO
+   * Construye la geometria en chunks para mantener UI responsive
    */
   rebuildSceneLazy() {
-    // Primero limpiamos y construimos lo básico (rápido)
+    // Primero limpiamos y construimos lo basico (rapido)
     this.clearGroups({ includeStructure: false });
     clearRhombiData();
 
     const { N, cutActive, cutLevel, h1 } = state;
 
-    // Ajustar posición vertical del grupo principal
+    // Ajustar posicion vertical del grupo principal
     if (cutActive) {
       this.mainGroup.position.z = -cutLevel * h1;
     } else {
@@ -307,10 +307,10 @@ export class SceneManager {
       createAxisAndPoints(this.axisGroup, this.geomPoint, this.matPoint);
     }
 
-    // Mantener/actualizar estructura (independiente de caras/líneas)
+    // Mantener/actualizar estructura (independiente de caras/lineas)
     this.maybeUpdateStructure();
 
-    // Actualizar iluminación
+    // Actualizar iluminacion
     this.updateLighting();
 
     // Construir elementos pesados progresivamente
@@ -336,14 +336,14 @@ export class SceneManager {
       });
     }
 
-    // Iniciar construcción lazy
+    // Iniciar construccion lazy
     if (!this.lazyBuildInProgress) {
       this.processLazyBuildQueue();
     }
   }
 
   /**
-   * Procesa la cola de construcción lazy (1 chunk por frame)
+   * Procesa la cola de construccion lazy (1 chunk por frame)
    */
   processLazyBuildQueue() {
     if (this.lazyBuildQueue.length === 0) {
@@ -361,7 +361,7 @@ export class SceneManager {
   }
 
   /**
-   * Reconstrucción normal (síncrona) para N pequeños
+   * Reconstruccion normal (sincrona) para N pequenos
    */
   rebuildScene() {
     this.clearGroups({ includeStructure: false });
@@ -369,7 +369,7 @@ export class SceneManager {
 
     const { N, cutActive, cutLevel, h1 } = state;
 
-    // Ajustar posición vertical del grupo principal
+    // Ajustar posicion vertical del grupo principal
     if (cutActive) {
       this.mainGroup.position.z = -cutLevel * h1;
     } else {
@@ -393,7 +393,7 @@ export class SceneManager {
       setRhombiData(data);
     }
 
-    // 4) Tapa de corte (solo si está activo el corte)
+    // 4) Tapa de corte (solo si esta activo el corte)
     if (cutActive && state.rhombiVisible) {
       createCutCap(this.capGroup, this.matCap);
     }
@@ -403,16 +403,16 @@ export class SceneManager {
       createAxisAndPoints(this.axisGroup, this.geomPoint, this.matPoint);
     }
 
-    // 6) Mantener/actualizar estructura (independiente de caras/líneas)
+    // 6) Mantener/actualizar estructura (independiente de caras/lineas)
     this.maybeUpdateStructure();
 
-    // 7) Actualizar iluminación según el modo
+    // 7) Actualizar iluminacion segun el modo
     this.updateLighting();
   }
 
     /**
-   * Limpia los grupos de geometría base.
-   * ⚠️ Por defecto NO toca la estructura, para que no desaparezca al activar/desactivar caras/líneas/polígonos.
+   * Limpia los grupos de geometria base.
+   *    Por defecto NO toca la estructura, para que no desaparezca al activar/desactivar caras/lineas/poligonos.
    */
   clearGroups({ includeStructure = false } = {}) {
     this.clearGroup(this.polygonsGroup);
@@ -434,19 +434,19 @@ export class SceneManager {
     const p = params || null;
     const s = state;
     return JSON.stringify({
-      // Geometría del zonohedro (lo que cambia posiciones)
+      // Geometria del zonohedro (lo que cambia posiciones)
       N: s.N,
       Dmax: s.Dmax,
       aDeg: s.aDeg,
       cutActive: !!s.cutActive,
       cutLevel: s.cutLevel,
-      // Parámetros de estructura
+      // Parametros de estructura
       p,
     });
   }
 
   /**
-   * Si el usuario tiene la estructura activada, la mantiene / regenera cuando cambia la geometría.
+   * Si el usuario tiene la estructura activada, la mantiene / regenera cuando cambia la geometria.
    */
   maybeUpdateStructure() {
     if (!state.structureVisible) return;
@@ -462,14 +462,14 @@ export class SceneManager {
 
   /**
    * Genera la estructura de vigas + conectores en la escena.
-   * Se auto-actualiza cuando cambia N / corte / Dmax (mientras esté activada).
+   * Se auto-actualiza cuando cambia N / corte / Dmax (mientras este activada).
    */
   generateConnectorStructure(params, { _fromAutoUpdate = false } = {}) {
     if (!this.structureGenerator) {
       this.structureGenerator = new StructureGenerator(this.structureGroup);
     }
 
-    // Guardar params para auto-actualización
+    // Guardar params para auto-actualizacion
     state.structureParams = { ...params };
     this._structureSignature = this.getStructureSignature(state.structureParams);
 
@@ -488,7 +488,7 @@ export class SceneManager {
   }
 
   /**
-   * Exporta un OBJ con SOLO la estructura (vigas + conectores cilíndricos)
+   * Exporta un OBJ con SOLO la estructura (vigas + conectores cilindricos)
    */
   exportConnectorStructureOBJ() {
     if (!this.structureGroup || this.structureGroup.children.length === 0) {
@@ -498,13 +498,13 @@ export class SceneManager {
   }
 
   /**
-   * Método mejorado para limpiar grupos y liberar memoria
+   * Metodo mejorado para limpiar grupos y liberar memoria
    */
   clearGroup(group) {
     while (group.children.length > 0) {
       const child = group.children[0];
       
-      // Liberar geometrías
+      // Liberar geometrias
       if (child.geometry) {
         child.geometry.dispose();
       }
@@ -548,7 +548,7 @@ export class SceneManager {
     
     let centerZ;
     if (cutActive) {
-      // Centrar en la porción visible del objeto cortado
+      // Centrar en la porcion visible del objeto cortado
       const visibleHeight = Htotal - (cutLevel * h1);
       centerZ = visibleHeight / 2;
     } else {
@@ -576,7 +576,7 @@ export class SceneManager {
   }
 
   render() {
-    // Rotación automática en el eje Z (antihorario)
+    // Rotacion automatica en el eje Z (antihorario)
     if (state.isRotating) {
       this.mainGroup.rotation.z += state.rotationSpeed * 0.01;
     }

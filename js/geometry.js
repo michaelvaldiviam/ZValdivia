@@ -2,10 +2,10 @@ import * as THREE from 'three';
 import { state, getColorForLevel } from './state.js';
 
 /**
- * Calcula el vértice de un anillo en la posición (k, i)
+ * Calcula el vertice de un anillo en la posicion (k, i)
  * @param {number} k - Nivel del anillo
- * @param {number} i - Índice del vértice en el anillo
- * @returns {THREE.Vector3} - Posición del vértice
+ * @param {number} i - Indice del vertice en el anillo
+ * @returns {THREE.Vector3} - Posicion del vertice
  */
 export function getRingVertex(k, i) {
   const { Dmax, N, h1 } = state;
@@ -23,13 +23,13 @@ export function getRingVertex(k, i) {
 }
 
 /**
- * 🚀 OPTIMIZACIÓN: Crear polígonos con BufferGeometry merged
+ *   OPTIMIZACION: Crear poligonos con BufferGeometry merged
  */
 export function createPolygons(polygonsGroup, matPolyLine, matPolyFill) {
   const { N, h1, cutActive, cutLevel } = state;
   const startK = cutActive ? cutLevel : 1;
 
-  // Merge todas las líneas en una sola geometría
+  // Merge todas las lineas en una sola geometria
   const allLinePoints = [];
   
   for (let k = startK; k < N; k++) {
@@ -51,7 +51,7 @@ export function createPolygons(polygonsGroup, matPolyLine, matPolyFill) {
   lineGeom.attributes.position.usage = THREE.StaticDrawUsage;
   polygonsGroup.add(new THREE.LineSegments(lineGeom, matPolyLine));
 
-  // Fill triangulation - merged en una sola geometría
+  // Fill triangulation - merged en una sola geometria
   const allFillPositions = [];
   
   for (let k = startK; k < N; k++) {
@@ -73,7 +73,7 @@ export function createPolygons(polygonsGroup, matPolyLine, matPolyFill) {
 }
 
 /**
- * 🚀 OPTIMIZACIÓN: Crear hélices con geometría merged
+ *   OPTIMIZACION: Crear helices con geometria merged
  */
 export function createHelices(helixGroup, matHelixCCW, matHelixCW) {
   const { N, cutActive, cutLevel } = state;
@@ -126,7 +126,7 @@ export function createHelices(helixGroup, matHelixCCW, matHelixCW) {
       tipPoints.push(pBot, pTop);
     }
 
-    // Crear geometría merged para cuerpo
+    // Crear geometria merged para cuerpo
     if (bodyPoints.length > 0) {
       const bodyGeom = new THREE.BufferGeometry().setFromPoints(bodyPoints);
       bodyGeom.attributes.position.usage = THREE.StaticDrawUsage;
@@ -134,7 +134,7 @@ export function createHelices(helixGroup, matHelixCCW, matHelixCW) {
       helixGroup.add(new THREE.LineSegments(bodyGeom, matBody));
     }
 
-    // Crear geometría merged para tips
+    // Crear geometria merged para tips
     if (tipPoints.length > 0) {
       const tipGeom = new THREE.BufferGeometry().setFromPoints(tipPoints);
       tipGeom.attributes.position.usage = THREE.StaticDrawUsage;
@@ -147,7 +147,7 @@ export function createHelices(helixGroup, matHelixCCW, matHelixCW) {
 }
 
 /**
- * 🚀 OPTIMIZACIÓN: Crear aristas con geometría merged
+ *   OPTIMIZACION: Crear aristas con geometria merged
  */
 export function createRhombiEdges(edgesGroup, matEdge) {
   const { N, cutActive, cutLevel } = state;
@@ -193,7 +193,7 @@ export function createRhombiEdges(edgesGroup, matEdge) {
 }
 
 /**
- * 🚀 OPTIMIZACIÓN CRÍTICA: Rombos con geometría merged por nivel
+ *   OPTIMIZACION CRITICA: Rombos con geometria merged por nivel
  */
 export function createRhombi(rhombiGroup, matRhombus) {
   const { N, colorByLevel, cutActive, cutLevel } = state;
@@ -258,7 +258,7 @@ export function createRhombi(rhombiGroup, matRhombus) {
           isTriangle: false
         });
 
-        // Dos triángulos por rombo
+        // Dos triangulos por rombo
         vertices.push(vBottom.x, vBottom.y, vBottom.z);
         vertices.push(vRight.x, vRight.y, vRight.z);
         vertices.push(vLeft.x, vLeft.y, vLeft.z);
@@ -320,7 +320,7 @@ export function createCutCap(capGroup, capMaterial) {
 }
 
 /**
- * 🚀 OPTIMIZACIÓN: Puntos usando InstancedMesh
+ *   OPTIMIZACION: Puntos usando InstancedMesh
  */
 export function createAxisAndPoints(axisGroup, geomPoint, matPoint) {
   const { N, Htotal, h1, cutActive, cutLevel } = state;

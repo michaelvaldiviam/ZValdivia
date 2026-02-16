@@ -3,19 +3,19 @@ import { state } from './state.js';
 import { getRingVertex } from './geometry.js';
 
 /**
- * Analiza la topología del zonohedro polar (vértices, aristas, caras) y
+ * Analiza la topologia del zonohedro polar (vertices, aristas, caras) y
  * construye un "nodo representativo" por cada nivel K visible.
  *
- * Nota de diseño:
+ * Nota de diseno:
  * - Se trabaja en "coordenadas visibles": si hay corte, se traslada todo para
  *   que el plano de corte quede en z = 0 (tal como lo ve el usuario).
  * - Las normales de cara se orientan hacia el interior (inward).
  * - El "vector directriz" de un nodo es la suma normalizada de las normales inward
- *   de las caras incidentes al vértice (con deduplicación por dirección).
+ *   de las caras incidentes al vertice (con deduplicacion por direccion).
  */
 export class NodeAnalyzer {
   static buildVertexId(k, i) {
-    // Polos: todos los índices i colapsan al mismo vértice (radio 0)
+    // Polos: todos los indices i colapsan al mismo vertice (radio 0)
     if (k === 0 || k === state.N) return `K${k}_I0`;
 
     // Normalizar i dentro de [0, N-1]
@@ -26,8 +26,8 @@ export class NodeAnalyzer {
   
 
 /**
- * ID de presentación para el PDF:
- * - Sin corte: K coincide con el índice real (polo inferior K=0, polo superior K=N)
+ * ID de presentacion para el PDF:
+ * - Sin corte: K coincide con el indice real (polo inferior K=0, polo superior K=N)
  * - Con corte: el suelo visible pasa a ser K=0 (Kvisible = Koriginal - cutLevel)
  */
 static buildDisplayId(k, i, kVisible, minK, N, cutActive) {
@@ -55,22 +55,22 @@ static parseVertexId(id) {
 
   static getModelCenterVisible() {
     const visibleLevels = state.cutActive ? (state.N - state.cutLevel) : state.N;
-    // Centro geométrico aproximado dentro del sólido (suficiente para orientar normales)
+    // Centro geometrico aproximado dentro del solido (suficiente para orientar normales)
     return new THREE.Vector3(0, 0, (visibleLevels * state.h1) / 2);
   }
 
   /**
-   * Construye todas las caras (en términos de IDs de vértices).
+   * Construye todas las caras (en terminos de IDs de vertices).
    * Incluye:
-   * - Caras laterales (rombos) y, en el nivel de corte, triángulos laterales.
-   * - Cara del plano de corte (polígono) si está activo.
+   * - Caras laterales (rombos) y, en el nivel de corte, triangulos laterales.
+   * - Cara del plano de corte (poligono) si esta activo.
    */
   static buildFaces() {
     const faces = [];
     const { N, cutActive, cutLevel } = state;
     const startK = cutActive ? cutLevel : 1;
 
-    // Caras laterales (según createRhombi en geometry.js)
+    // Caras laterales (segun createRhombi en geometry.js)
     for (let k = startK; k <= N - 1; k++) {
       for (let i = 0; i < N; i++) {
         let idxL, idxR;
@@ -83,7 +83,7 @@ static parseVertexId(id) {
         }
 
         if (cutActive && k === cutLevel) {
-          // Triángulo lateral (no incluye vBottom porque está cortado)
+          // Triangulo lateral (no incluye vBottom porque esta cortado)
           const a = this.buildVertexId(k, idxL);
           const b = this.buildVertexId(k, idxR);
           const c = this.buildVertexId(k + 1, i);
@@ -98,7 +98,7 @@ static parseVertexId(id) {
       }
     }
 
-    // Cara del plano de corte (polígono)
+    // Cara del plano de corte (poligono)
     if (cutActive) {
       const ring = [];
       for (let i = 0; i < N; i++) ring.push(this.buildVertexId(cutLevel, i));
@@ -113,7 +113,7 @@ static parseVertexId(id) {
 
     // Para N-gono (cut-cap) usamos 3 puntos: centro + (v0,v1)
     if (face.type === 'cut-cap') {
-      const z = 0; // visible coords: corte está en z=0
+      const z = 0; // visible coords: corte esta en z=0
       const center = new THREE.Vector3(0, 0, z);
       const v0 = this.getVertexPositionVisible(state.cutLevel, 0);
       const v1 = this.getVertexPositionVisible(state.cutLevel, 1);
@@ -121,7 +121,7 @@ static parseVertexId(id) {
       const e2 = new THREE.Vector3().subVectors(v1, center);
       const n = new THREE.Vector3().crossVectors(e1, e2).normalize();
 
-      // Orientar inward usando centro del sólido
+      // Orientar inward usando centro del solido
       const centroid = new THREE.Vector3();
       for (let i = 0; i < verts.length; i++) {
         const { k, i: ii } = this.parseVertexId(verts[i]);
@@ -134,7 +134,7 @@ static parseVertexId(id) {
       return n;
     }
 
-    // Tri / Quad: usar los primeros 3 vértices según orden de construcción
+    // Tri / Quad: usar los primeros 3 vertices segun orden de construccion
     const p = [];
     for (let t = 0; t < Math.min(3, verts.length); t++) {
       const { k, i } = this.parseVertexId(verts[t]);
@@ -167,7 +167,7 @@ static parseVertexId(id) {
   }
 
   /**
-   * Construye aristas únicas (undirected) desde las caras.
+   * Construye aristas unicas (undirected) desde las caras.
    * Devuelve:
    * - edges: Map(edgeKey -> {a,b, faces:[faceIndex...]})
    * - vertexToNeighbors: Map(vid -> Set(vid))
@@ -213,8 +213,8 @@ static parseVertexId(id) {
   }
 
   /**
-   * Computa nodos representativos: un vértice por nivel K visible (i=0),
-   * con conectividad, normales, vector directriz y ángulos.
+   * Computa nodos representativos: un vertice por nivel K visible (i=0),
+   * con conectividad, normales, vector directriz y angulos.
    */
   static computeRepresentativeNodes() {
     const { N, cutActive, cutLevel } = state;
@@ -225,7 +225,7 @@ static parseVertexId(id) {
     const faceNormalsInward = faces.map(f => this.computeFaceNormalInward(f, centerVisible));
     const { edges, vertexToNeighbors, vertexToFaces } = this.buildConnectivity(faces);
 
-    // helper: normales de caras que "forman" una arista (las caras que contienen ambos vértices)
+    // helper: normales de caras que "forman" una arista (las caras que contienen ambos vertices)
     const edgeFacesNormals = (u, v) => {
       const key = (u < v ? `${u}__${v}` : `${v}__${u}`);
       const e = edges.get(key);
@@ -242,29 +242,29 @@ static parseVertexId(id) {
 
             const visibleKIndex = (k - minK); // 0..niveles visibles (incluye polos)
 
-      // Caras incidentes al vértice
+      // Caras incidentes al vertice
       const incidentFaceIdx = vertexToFaces.get(id) ? [...vertexToFaces.get(id)] : [];
       const incidentNormals = incidentFaceIdx.map(fi => faceNormalsInward[fi].clone());
 
-      // Deduplicar por dirección (importante en cut-cap, donde un vértice aparece en múltiples triángulos)
+      // Deduplicar por direccion (importante en cut-cap, donde un vertice aparece en multiples triangulos)
       const uniqueIncidentNormals = this.dedupeNormals(incidentNormals);
 
       // Vector directriz (inward)
       const directive = new THREE.Vector3(0, 0, 0);
       uniqueIncidentNormals.forEach(n => directive.add(n));
       if (directive.lengthSq() < 1e-12) {
-        // Fallback: hacia el eje del sólido
+        // Fallback: hacia el eje del solido
         directive.set(-pos.x, -pos.y, 0);
       }
       directive.normalize();
 
-      // Rotación para nivelar: directriz -> +Z (inward).
-      // Además fijamos el "roll" usando el eje vertical global para que lo que está "arriba"
-      // en el zonohedro se vea arriba en el PDF (orientación determinista).
+      // Rotacion para nivelar: directriz -> +Z (inward).
+      // Ademas fijamos el "roll" usando el eje vertical global para que lo que esta "arriba"
+      // en el zonohedro se vea arriba en el PDF (orientacion determinista).
       const qLevel = new THREE.Quaternion().setFromUnitVectors(directive, new THREE.Vector3(0, 0, 1));
 
-      // Referencia de "arriba" en el marco nivelado: proyección del +Z global al plano ⟂ directriz.
-      // Si la proyección es degenerada (polo), usamos +X global como respaldo.
+      // Referencia de "arriba" en el marco nivelado: proyeccion del +Z global al plano   directriz.
+      // Si la proyeccion es degenerada (polo), usamos +X global como respaldo.
       const worldUp = new THREE.Vector3(0, 0, 1);
       let upLeveled = worldUp.clone().applyQuaternion(qLevel);
       upLeveled.z = 0;
@@ -289,7 +289,7 @@ static parseVertexId(id) {
         const len = v.length();
         const vUnit = (len > 0 ? v.clone().multiplyScalar(1 / len) : new THREE.Vector3(0, 0, 0));
 
-        // Ángulo entre la arista (saliente) y el vector directriz (inward).
+        // Angulo entre la arista (saliente) y el vector directriz (inward).
         // Se calcula en el espacio 3D visible, antes de nivelar.
         let angleToDirectiveDeg = null;
         {
@@ -298,18 +298,18 @@ static parseVertexId(id) {
           if (isFinite(dot)) angleToDirectiveDeg = (Math.acos(dot) * 180) / Math.PI;
         }
 
-        // aplicar nivelación
+        // aplicar nivelacion
         const vLeveled = vUnit.clone().applyQuaternion(qFinal);
 
-        // proyección en plano perpendicular al directriz (XY tras nivelar)
+        // proyeccion en plano perpendicular al directriz (XY tras nivelar)
         const vProj = new THREE.Vector3(vLeveled.x, vLeveled.y, 0);
         const projLen = vProj.length();
         let az = null;
         if (projLen > 1e-9) {
           vProj.multiplyScalar(1 / projLen);
 
-          // ✅ Exterior del nodo: vista desde afuera (opuesto al directriz).
-          // Para representar el cambio de observador (+Z → -Z) sin invertir el "arriba",
+          //   Exterior del nodo: vista desde afuera (opuesto al directriz).
+          // Para representar el cambio de observador (+Z   -Z) sin invertir el "arriba",
           // aplicamos un espejo en X (cambia la lateralidad pero conserva arriba/abajo).
           vProj.x *= -1;
 
@@ -333,7 +333,7 @@ static parseVertexId(id) {
         };
       });
 
-      // Calcular separaciones angulares (solo para aristas con azimuth válido)
+      // Calcular separaciones angulares (solo para aristas con azimuth valido)
       const withAz = edgesOut
         .map((e, idx) => ({ ...e, _idx: idx }))
         .filter(e => typeof e.azimuthDeg === 'number');

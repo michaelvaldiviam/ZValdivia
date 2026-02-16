@@ -1,7 +1,7 @@
 import { state, updateStateCalculations, rhombiData } from './state.js';
 
 /**
- * Maneja toda la lógica de la interfaz de usuario
+ * Maneja toda la logica de la interfaz de usuario
  */
 export class UIManager {
   constructor(sceneManager) {
@@ -31,7 +31,7 @@ export class UIManager {
     this.dmaxRange = document.getElementById('dmaxRange');
     this.dmaxControl = document.getElementById('dmaxControl');
     
-    // ✅ NUEVO: Controles de diámetro del piso
+    //   NUEVO: Controles de diametro del piso
     this.floorDiameterNum = document.getElementById('floorDiameterNum');
     this.floorDiameterRange = document.getElementById('floorDiameterRange');
     this.floorDiameterControl = document.getElementById('floorDiameterControl');
@@ -98,7 +98,7 @@ export class UIManager {
     this.heightIndicatorButton = document.getElementById('heightIndicatorButton');
     this.heightIndicatorTimer = null;
 
-    // 🚀 PERFORMANCE: No crear indicador de FPS (opcional)
+    //   PERFORMANCE: No crear indicador de FPS (opcional)
     // this.createPerformanceIndicator();
     
     // Configurar grupos colapsables
@@ -146,10 +146,10 @@ export class UIManager {
   }
 
   showNotification(message, type = 'info') {
-    // Crear notificación temporal
+    // Crear notificacion temporal
     const notification = document.createElement('div');
 
-    // Colores según el tipo
+    // Colores segun el tipo
     let borderColor = 'rgba(255, 165, 0, 0.5)'; // warning (naranja)
     let iconColor = '#f59e0b';
     let icon = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="${iconColor}" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>`;
@@ -190,7 +190,7 @@ export class UIManager {
       </div>
     `;
 
-    // Agregar animación CSS
+    // Agregar animacion CSS
     const style = document.createElement('style');
     style.textContent = `
       @keyframes slideIn {
@@ -208,7 +208,7 @@ export class UIManager {
 
     document.body.appendChild(notification);
 
-    // Remover después de 2.5 segundos (más tiempo para info)
+    // Remover despues de 2.5 segundos (mas tiempo para info)
     const duration = type === 'info' ? 3000 : 2500;
     setTimeout(() => {
       notification.style.animation = 'slideIn 0.3s ease-out reverse';
@@ -226,7 +226,7 @@ export class UIManager {
     if (this.closeAdvancedBtn) 
       this.closeAdvancedBtn.addEventListener('click', () => this.closeAdvancedPanel());
 
-    // Info panel toggle (solo móvil)
+    // Info panel toggle (solo movil)
     if (this.toggleInfoBtn) 
       this.toggleInfoBtn.addEventListener('click', () => this.toggleInfo());
 
@@ -260,13 +260,13 @@ export class UIManager {
     if (this.dmaxRange) 
       this.dmaxRange.addEventListener('input', () => this.throttledSyncInputs('range', 'dmax'));
 
-    // ✅ NUEVO: Listeners para diámetro del piso
+    //   NUEVO: Listeners para diametro del piso
     if (this.floorDiameterNum) 
       this.floorDiameterNum.addEventListener('input', () => this.debouncedSyncFloorDiameter('num'));
     if (this.floorDiameterRange) 
       this.floorDiameterRange.addEventListener('input', () => this.throttledSyncFloorDiameter('range'));
 
-    // N es el más crítico - throttling más agresivo
+    // N es el mas critico - throttling mas agresivo
     if (this.nNum) {
       this.nNum.addEventListener('input', () => {
         this.debouncedSyncInputs('num', 'n');
@@ -289,7 +289,7 @@ export class UIManager {
         this.throttledSyncInputs('range', 'a');
         this.showHeightIndicator();
       });
-      // NO ocultar automáticamente - dejar que el timer lo haga
+      // NO ocultar automaticamente - dejar que el timer lo haga
     }
 
     // Cut plane controls
@@ -354,7 +354,7 @@ export class UIManager {
     const on = !!collapsed;
     if (this.paramsSection) this.paramsSection.classList.toggle('collapsed', on);
     if (this.quickInfo) this.quickInfo.classList.toggle('collapsed', on);
-    // El botón suele invertir su ícono/estado con la misma clase 'collapsed'
+    // El boton suele invertir su icono/estado con la misma clase 'collapsed'
     if (this.toggleMainPanelBtn) this.toggleMainPanelBtn.classList.toggle('collapsed', on);
   }
 
@@ -380,7 +380,7 @@ export class UIManager {
     // Actualizar valor en el input (3 decimales)
     this.heightIndicatorInput.value = alturaVisible.toFixed(3);
 
-    // Posicionar dinámicamente en móviles justo encima del control de ángulo
+    // Posicionar dinamicamente en moviles justo encima del control de angulo
     if (window.innerWidth <= 640) {
       const mainControls = document.getElementById('mainControls');
       if (mainControls) {
@@ -389,7 +389,7 @@ export class UIManager {
         this.heightIndicator.style.bottom = `${window.innerHeight - rect.top + 12}px`;
       }
     } else {
-      // En desktop, mantener posición fija bottom-right
+      // En desktop, mantener posicion fija bottom-right
       this.heightIndicator.style.bottom = '20px';
     }
 
@@ -401,7 +401,7 @@ export class UIManager {
       clearTimeout(this.heightIndicatorTimer);
     }
 
-    // Auto-ocultar después de 5 segundos de inactividad (solo si no está en edición)
+    // Auto-ocultar despues de 5 segundos de inactividad (solo si no esta en edicion)
     // Tiempo aumentado para dar oportunidad de interactuar
     if (!this.heightIndicator.classList.contains('editing')) {
       this.heightIndicatorTimer = setTimeout(() => {
@@ -413,7 +413,7 @@ export class UIManager {
   hideHeightIndicator() {
     if (!this.heightIndicator) return;
 
-    // No ocultar si está en modo edición
+    // No ocultar si esta en modo edicion
     if (this.heightIndicator.classList.contains('editing')) {
       return;
     }
@@ -431,7 +431,7 @@ export class UIManager {
   onHeightInputFocus() {
     if (!this.heightIndicator) return;
 
-    // Entrar en modo edición
+    // Entrar en modo edicion
     this.heightIndicator.classList.add('editing');
 
     // Cancelar auto-hide
@@ -440,22 +440,22 @@ export class UIManager {
       this.heightIndicatorTimer = null;
     }
 
-    // Seleccionar todo el texto para facilitar la edición
+    // Seleccionar todo el texto para facilitar la edicion
     if (this.heightIndicatorInput) {
       this.heightIndicatorInput.select();
     }
   }
 
   onHeightInputBlur() {
-    // Pequeño delay para permitir que el botón sea clickeable
+    // Pequeno delay para permitir que el boton sea clickeable
     setTimeout(() => {
       if (!this.heightIndicator) return;
       
-      // Salir del modo edición solo si no se está clickeando el botón
+      // Salir del modo edicion solo si no se esta clickeando el boton
       if (document.activeElement !== this.heightIndicatorButton) {
         this.heightIndicator.classList.remove('editing');
         
-        // Reiniciar auto-hide con más tiempo
+        // Reiniciar auto-hide con mas tiempo
         this.heightIndicatorTimer = setTimeout(() => {
           this.hideHeightIndicator();
         }, 5000);
@@ -470,78 +470,78 @@ export class UIManager {
 
     // Validar entrada
     if (isNaN(inputValue) || inputValue <= 0) {
-      this.showNotification('Por favor ingresa una altura válida mayor a 0', 'error');
+      this.showNotification('Por favor ingresa una altura valida mayor a 0', 'error');
       return;
     }
 
-    // Calcular altura mínima y máxima posible
+    // Calcular altura minima y maxima posible
     const nivelesVisibles = state.cutActive ? state.N - state.cutLevel : state.N;
     
-    // Altura mínima: con ángulo de 0.1°
+    // Altura minima: con angulo de 0.1deg
     const minAngle = 0.1 * Math.PI / 180;
     const minH1 = (state.Dmax / 2) * Math.tan(minAngle) * Math.sin(Math.PI / state.N);
     const minHeight = minH1 * nivelesVisibles;
     
-    // Altura máxima: con ángulo de 89°
+    // Altura maxima: con angulo de 89deg
     const maxAngle = 89 * Math.PI / 180;
     const maxH1 = (state.Dmax / 2) * Math.tan(maxAngle) * Math.sin(Math.PI / state.N);
     const maxHeight = maxH1 * nivelesVisibles;
 
     if (inputValue < minHeight) {
-      this.showNotification(`Altura muy pequeña. Mínimo: ${minHeight.toFixed(3)} m`, 'error');
+      this.showNotification(`Altura muy pequena. Minimo: ${minHeight.toFixed(3)} m`, 'error');
       return;
     }
 
     if (inputValue > maxHeight) {
-      this.showNotification(`Altura muy grande. Máximo: ${maxHeight.toFixed(3)} m`, 'error');
+      this.showNotification(`Altura muy grande. Maximo: ${maxHeight.toFixed(3)} m`, 'error');
       return;
     }
 
     // Calcular h1 necesario
     const h1_needed = inputValue / nivelesVisibles;
 
-    // Calcular ángulo necesario usando la fórmula inversa:
-    // h1 = (Dmax / 2) * tan(aRad) * sin(π / N)
-    // tan(aRad) = h1 / ((Dmax / 2) * sin(π / N))
-    // aRad = atan(h1 / ((Dmax / 2) * sin(π / N)))
+    // Calcular angulo necesario usando la formula inversa:
+    // h1 = (Dmax / 2) * tan(aRad) * sin(  / N)
+    // tan(aRad) = h1 / ((Dmax / 2) * sin(  / N))
+    // aRad = atan(h1 / ((Dmax / 2) * sin(  / N)))
     
     const denominator = (state.Dmax / 2) * Math.sin(Math.PI / state.N);
     const aRad_needed = Math.atan(h1_needed / denominator);
     const aDeg_needed = (aRad_needed * 180) / Math.PI;
 
-    // Validar que el ángulo esté en rango válido
+    // Validar que el angulo este en rango valido
     if (aDeg_needed < 0.1 || aDeg_needed > 89) {
-      this.showNotification('No se puede calcular un ángulo válido para esta altura', 'error');
+      this.showNotification('No se puede calcular un angulo valido para esta altura', 'error');
       return;
     }
 
     // Actualizar el estado y los controles
     state.aDeg = aDeg_needed;
     
-    // Actualizar los inputs de ángulo
+    // Actualizar los inputs de angulo
     if (this.aNum) this.aNum.value = aDeg_needed.toFixed(2);
     if (this.aRange) this.aRange.value = aDeg_needed.toFixed(2);
 
     // Actualizar badge
     if (this.badgeAngle) {
-      this.badgeAngle.textContent = `${aDeg_needed.toFixed(2)}°`;
+      this.badgeAngle.textContent = `${aDeg_needed.toFixed(2)}deg`;
     }
 
-    // Actualizar cálculos del estado
+    // Actualizar calculos del estado
     this.updateState();
 
-    // Reconstruir geometría
+    // Reconstruir geometria
     this.sceneManager.requestRebuild();
     this.updateFacesCount();
     this.updateGeometryInfo();
 
-    // Salir del modo edición
+    // Salir del modo edicion
     this.heightIndicator.classList.remove('editing');
 
-    // Mostrar mensaje de éxito
-    this.showNotification(`Altura ajustada a ${inputValue.toFixed(3)} m (α = ${aDeg_needed.toFixed(2)}°)`, 'success');
+    // Mostrar mensaje de exito
+    this.showNotification(`Altura ajustada a ${inputValue.toFixed(3)} m (  = ${aDeg_needed.toFixed(2)}deg)`, 'success');
 
-    // Ocultar después de 3 segundos para ver el resultado
+    // Ocultar despues de 3 segundos para ver el resultado
     this.heightIndicatorTimer = setTimeout(() => {
       this.hideHeightIndicator();
     }, 3000);
@@ -559,35 +559,35 @@ export class UIManager {
     }
   }
 
-  // ✅ NUEVO: Actualizar display de niveles visibles
+  //   NUEVO: Actualizar display de niveles visibles
   updateCutLevelDisplay() {
     const visibleLevels = state.N - state.cutLevel;
     if (this.cutLevelNum) this.cutLevelNum.value = visibleLevels;
     if (this.cutLevelRange) this.cutLevelRange.value = visibleLevels;
   }
 
-  // ✅ NUEVO: Actualizar display de altura visible
+  //   NUEVO: Actualizar display de altura visible
   updateHeightDisplay() {
     const nivelesVisibles = state.cutActive ? (state.N - state.cutLevel) : state.N;
     const alturaVisible = state.h1 * nivelesVisibles;
     if (this.infoH) this.infoH.textContent = alturaVisible.toFixed(3);
   }
 
-  // ✅ NUEVO: Toggle entre controles Dmax y diámetro del piso
+  //   NUEVO: Toggle entre controles Dmax y diametro del piso
   toggleDiameterControls() {
     if (state.cutActive) {
-      // Mostrar control de diámetro del piso, ocultar Dmax
+      // Mostrar control de diametro del piso, ocultar Dmax
       if (this.dmaxControl) this.dmaxControl.style.display = 'none';
       if (this.floorDiameterControl) this.floorDiameterControl.style.display = 'grid';
       
-      // Actualizar valores del control de diámetro del piso
+      // Actualizar valores del control de diametro del piso
       if (this.floorDiameterNum) this.floorDiameterNum.value = state.floorDiameter.toFixed(3);
       if (this.floorDiameterRange) {
         this.floorDiameterRange.value = state.floorDiameter.toFixed(3);
         this.floorDiameterRange.max = state.Dmax;
       }
     } else {
-      // Mostrar control de Dmax, ocultar diámetro del piso
+      // Mostrar control de Dmax, ocultar diametro del piso
       if (this.dmaxControl) this.dmaxControl.style.display = 'grid';
       if (this.floorDiameterControl) this.floorDiameterControl.style.display = 'none';
     }
@@ -611,39 +611,39 @@ export class UIManager {
       this.cutLevelNum.min = 1;
     }
 
-    // Asegurar que cutLevel esté dentro del rango válido
+    // Asegurar que cutLevel este dentro del rango valido
     if (state.cutLevel >= state.N - 1) state.cutLevel = state.N - 1;
     if (state.cutLevel < 1) state.cutLevel = 1;
 
     // Actualizar display con niveles visibles
     this.updateCutLevelDisplay();
 
-    // ✅ CAMBIO: Usar updateHeightDisplay() en lugar de asignar directamente
+    //   CAMBIO: Usar updateHeightDisplay() en lugar de asignar directamente
     this.updateHeightDisplay();
 
     if (this.infoH1) this.infoH1.textContent = state.h1.toFixed(3);
     
-    // ✅ NUEVO: Actualizar badges del header
+    //   NUEVO: Actualizar badges del header
     this.updateBadges();
 
-    // Actualizar información geométrica
+    // Actualizar informacion geometrica
     this.updateGeometryInfo();
     
-    // ✅ NUEVO: Actualizar controles de diámetro
+    //   NUEVO: Actualizar controles de diametro
     this.toggleDiameterControls();
   }
 
-  // ✅ NUEVO: Método para actualizar los badges del header
+  //   NUEVO: Metodo para actualizar los badges del header
   updateBadges() {
     if (this.badgeN) {
       this.badgeN.textContent = state.N;
     }
     if (this.badgeAngle) {
-      this.badgeAngle.textContent = `${state.aDeg.toFixed(2)}°`;
+      this.badgeAngle.textContent = `${state.aDeg.toFixed(2)}deg`;
     }
     if (this.badgeDiameter) {
       if (state.cutActive) {
-        // Usar el valor de floorDiameter que está en el state
+        // Usar el valor de floorDiameter que esta en el state
         this.badgeDiameter.textContent = `${state.floorDiameter.toFixed(3)}m`;
       } else {
         this.badgeDiameter.textContent = `${state.Dmax.toFixed(3)}m`;
@@ -672,27 +672,27 @@ export class UIManager {
     }
   }
 
-  // ✅ NUEVO: Actualizar Dmax desde el diámetro del piso
+  //   NUEVO: Actualizar Dmax desde el diametro del piso
   updateDmaxFromFloorDiameter() {
     const floorDiameter = Math.max(0.1, parseFloat(this.floorDiameterNum?.value) || 6);
     
     const sineFactor = Math.sin((state.cutLevel * Math.PI) / state.N);
     
-    if (sineFactor > 0.001) {  // Evitar división por cero
+    if (sineFactor > 0.001) {  // Evitar division por cero
       state.Dmax = floorDiameter / sineFactor;
       
-      // Actualizar los controles de Dmax (aunque estén ocultos)
+      // Actualizar los controles de Dmax (aunque esten ocultos)
       if (this.dmaxNum) this.dmaxNum.value = state.Dmax.toFixed(3);
       if (this.dmaxRange) this.dmaxRange.value = state.Dmax.toFixed(3);
       
       // Recalcular todo
       updateStateCalculations();
       
-      // ✅ CAMBIO: Usar updateHeightDisplay()
+      //   CAMBIO: Usar updateHeightDisplay()
       this.updateHeightDisplay();
       
       if (this.infoH1) this.infoH1.textContent = state.h1.toFixed(3);
-      if (this.statusBadge) this.statusBadge.textContent = `N=${state.N} · α=${state.aDeg.toFixed(2)}°`;
+      if (this.statusBadge) this.statusBadge.textContent = `N=${state.N}    =${state.aDeg.toFixed(2)}deg`;
       this.updateGeometryInfo();
     }
   }
@@ -700,11 +700,11 @@ export class UIManager {
   updateGeometryInfo() {
     const { N, Dmax, h1, cutActive, cutLevel, aRad, floorDiameter } = state;
 
-    // Calcular diámetro del polígono en el piso de corte
+    // Calcular diametro del poligono en el piso de corte
     if (cutActive) {
-      // Mostrar el diámetro del piso que el usuario está controlando
+      // Mostrar el diametro del piso que el usuario esta controlando
       if (this.infoDiameter) this.infoDiameter.textContent = floorDiameter.toFixed(3);
-      if (this.diameterLabel) this.diameterLabel.textContent = 'Ø piso';
+      if (this.diameterLabel) this.diameterLabel.textContent = '  piso';
     } else {
       // Mostrar Dmax cuando no hay corte
       if (this.infoDiameter) this.infoDiameter.textContent = Dmax.toFixed(3);
@@ -712,21 +712,21 @@ export class UIManager {
     }
 
     // Calcular lado del rombo
-    // El lado del rombo se calcula usando la distancia entre vértices adyacentes
+    // El lado del rombo se calcula usando la distancia entre vertices adyacentes
     // Para un rombo en el nivel k, usamos k=1 como referencia
     const k = 1;
     const Rk = (Dmax / 2) * Math.sin((k * Math.PI) / N);
     const step = (2 * Math.PI) / N;
 
-    // Distancia entre dos vértices consecutivos en el mismo nivel
+    // Distancia entre dos vertices consecutivos en el mismo nivel
     const chordLength = 2 * Rk * Math.sin(step / 2);
 
     // Altura entre niveles es h1
-    // El lado del rombo usa teorema de Pitágoras
+    // El lado del rombo usa teorema de Pitagoras
     const rhombusSide = Math.sqrt(chordLength * chordLength + h1 * h1);
     if (this.infoRhombusSide) this.infoRhombusSide.textContent = rhombusSide.toFixed(3);
 
-    // Calcular base del triángulo en el piso de corte (si está activo)
+    // Calcular base del triangulo en el piso de corte (si esta activo)
     if (cutActive) {
       const RkCut = (Dmax / 2) * Math.sin((cutLevel * Math.PI) / N);
       const triangleBase = 2 * RkCut * Math.sin(step / 2);
@@ -746,7 +746,7 @@ export class UIManager {
     }
   }
 
-  // Método con debouncing para cambios finales
+  // Metodo con debouncing para cambios finales
   debouncedSyncInputs(source, param) {
     // Actualizar valores inmediatamente para feedback visual
     this.syncInputValues(source);
@@ -754,24 +754,24 @@ export class UIManager {
     // Cancelar timer anterior
     if (this.debounceTimer) clearTimeout(this.debounceTimer);
 
-    // Esperar 200ms después del último cambio para reconstruir (aumentado para mejor performance)
+    // Esperar 200ms despues del ultimo cambio para reconstruir (aumentado para mejor performance)
     this.debounceTimer = setTimeout(() => {
       this.performSync();
     }, 200);
   }
 
-  // Método con throttling para actualizaciones continuas (sliders)
+  // Metodo con throttling para actualizaciones continuas (sliders)
   throttledSyncInputs(source, param) {
     // Actualizar valores inmediatamente
     this.syncInputValues(source);
 
-    // Si ya hay una actualización en curso, salir
+    // Si ya hay una actualizacion en curso, salir
     if (this.isUpdating) return;
 
     // Marcar como actualizando
     this.isUpdating = true;
 
-    // Throttle: máximo una reconstrucción cada 150ms (aumentado de 100ms)
+    // Throttle: maximo una reconstruccion cada 150ms (aumentado de 100ms)
     setTimeout(() => {
       this.performSync();
       this.isUpdating = false;
@@ -790,7 +790,7 @@ export class UIManager {
       if (this.aNum && this.aRange) this.aNum.value = this.aRange.value;
     }
     
-    // Actualizar state temporalmente para cálculo de badges
+    // Actualizar state temporalmente para calculo de badges
     const prevState = {
       N: state.N,
       aDeg: state.aDeg,
@@ -809,14 +809,14 @@ export class UIManager {
     this.updateBadges();
   }
 
-  // Realizar la sincronización completa con rebuild
+  // Realizar la sincronizacion completa con rebuild
   performSync() {
     this.updateState();
     this.sceneManager.requestRebuild();
     this.updateFacesCount();
   }
 
-  // ✅ NUEVO: Debouncing para diámetro del piso
+  //   NUEVO: Debouncing para diametro del piso
   debouncedSyncFloorDiameter(source) {
     this.syncFloorDiameterValues(source);
     if (this.debounceTimer) clearTimeout(this.debounceTimer);
@@ -825,7 +825,7 @@ export class UIManager {
     }, 200);
   }
 
-  // ✅ NUEVO: Throttling para diámetro del piso
+  //   NUEVO: Throttling para diametro del piso
   throttledSyncFloorDiameter(source) {
     this.syncFloorDiameterValues(source);
     if (this.isUpdating) return;
@@ -836,7 +836,7 @@ export class UIManager {
     }, 150);
   }
 
-  // ✅ NUEVO: Sincronizar valores de diámetro del piso
+  //   NUEVO: Sincronizar valores de diametro del piso
   syncFloorDiameterValues(source) {
     if (source === 'num') {
       if (this.floorDiameterRange && this.floorDiameterNum) 
@@ -855,7 +855,7 @@ export class UIManager {
     this.updateBadges();
   }
 
-  // ✅ NUEVO: Realizar sincronización de diámetro del piso
+  //   NUEVO: Realizar sincronizacion de diametro del piso
   performFloorDiameterSync() {
     this.updateDmaxFromFloorDiameter();
     this.sceneManager.requestRebuild();
@@ -895,14 +895,14 @@ export class UIManager {
     const visibleLevels = parseInt(this.cutLevelNum?.value) || 5;
     state.cutLevel = state.N - visibleLevels;
 
-    // Asegurar límites válidos
+    // Asegurar limites validos
     state.cutLevel = Math.max(1, Math.min(state.N - 1, state.cutLevel));
 
     if (state.cutActive) {
-      // ✅ NUEVO: Actualizar altura visible
+      //   NUEVO: Actualizar altura visible
       this.updateHeightDisplay();
       
-      // ✅ NUEVO: Recalcular y actualizar diámetro del piso
+      //   NUEVO: Recalcular y actualizar diametro del piso
       updateStateCalculations();
       
       if (this.floorDiameterNum) this.floorDiameterNum.value = state.floorDiameter.toFixed(3);
@@ -924,7 +924,7 @@ export class UIManager {
       this.facesBtn.classList.toggle('active', state.rhombiVisible);
       const status = this.facesBtn.querySelector('.button-status');
       if (status) {
-        status.textContent = state.rhombiVisible ? '●' : '○';
+        status.textContent = state.rhombiVisible ? ' ' : ' ';
       }
     }
     this.sceneManager.requestRebuild();
@@ -937,7 +937,7 @@ export class UIManager {
       this.togglePolysBtn.classList.toggle('active', state.polysVisible);
       const status = this.togglePolysBtn.querySelector('.button-status');
       if (status) {
-        status.textContent = state.polysVisible ? '●' : '○';
+        status.textContent = state.polysVisible ? ' ' : ' ';
       }
     }
     this.sceneManager.requestRebuild();
@@ -949,14 +949,14 @@ export class UIManager {
       this.toggleLinesBtn.classList.toggle('active', state.linesVisible);
       const status = this.toggleLinesBtn.querySelector('.button-status');
       if (status) {
-        status.textContent = state.linesVisible ? '●' : '○';
+        status.textContent = state.linesVisible ? ' ' : ' ';
       }
     }
     this.sceneManager.requestRebuild();
   }
 
   toggleColorByLevel() {
-    // Verificar si las caras están activadas
+    // Verificar si las caras estan activadas
     if (!state.rhombiVisible) {
       this.showNotification('Debes activar las caras primero para cambiar el skin');
       return;
@@ -967,7 +967,7 @@ export class UIManager {
       this.colorByLevelBtn.classList.toggle('active', state.colorByLevel);
       const status = this.colorByLevelBtn.querySelector('.button-status');
       if (status) {
-        status.textContent = state.colorByLevel ? '●' : '○';
+        status.textContent = state.colorByLevel ? ' ' : ' ';
       }
     }
     this.sceneManager.requestRebuild();
@@ -980,7 +980,7 @@ export class UIManager {
       this.toggleAxisBtn.classList.toggle('active', state.axisVisible);
       const status = this.toggleAxisBtn.querySelector('.button-status');
       if (status) {
-        status.textContent = state.axisVisible ? '●' : '○';
+        status.textContent = state.axisVisible ? ' ' : ' ';
       }
     }
     this.sceneManager.requestRebuild();
@@ -1001,17 +1001,17 @@ export class UIManager {
       // Actualizar solo el texto del span, manteniendo el SVG
       const btnText = this.cutBtn.querySelector('span');
       if (btnText) {
-        btnText.textContent = state.cutActive ? 'Desactivar porción' : 'Crear porción';
+        btnText.textContent = state.cutActive ? 'Desactivar porcion' : 'Crear porcion';
       }
     }
 
-    // ✅ NUEVO: Actualizar altura visible
+    //   NUEVO: Actualizar altura visible
     this.updateHeightDisplay();
     
-    // ✅ NUEVO: Actualizar controles de diámetro
+    //   NUEVO: Actualizar controles de diametro
     this.toggleDiameterControls();
     
-    // ✅ NUEVO: Actualizar badges
+    //   NUEVO: Actualizar badges
     this.updateBadges();
 
     this.sceneManager.requestRebuild();
@@ -1034,7 +1034,7 @@ export class UIManager {
     const beamWidthMm = Number(this.beamWidthMm?.value || 0);
 
     if (!cylDiameterMm || !cylDepthMm || !beamHeightMm || !beamWidthMm) {
-      this.showNotification('Ingresa diámetro/profundidad del conector y alto/ancho de la viga (mm).', 'error');
+      this.showNotification('Ingresa diametro/profundidad del conector y alto/ancho de la viga (mm).', 'error');
       return;
     }
 
@@ -1050,7 +1050,7 @@ export class UIManager {
         this.sceneManager.setStructureVisible(true);
         if (this.toggleStructureVisible) this.toggleStructureVisible.checked = true;
       } catch (_) {}
-      this.showNotification('Estructura generada. Se actualizará automáticamente al cambiar parámetros del zonohedro mientras esté activa.', 'success');
+      this.showNotification('Estructura generada. Se actualizara automaticamente al cambiar parametros del zonohedro mientras este activa.', 'success');
     } catch (err) {
       console.error(err);
       this.showNotification('No se pudo generar la estructura. Revisa la consola para detalles.', 'error');
@@ -1071,7 +1071,7 @@ export class UIManager {
   }
 
     /**
-   * Actualiza todos los botones según el estado actual
+   * Actualiza todos los botones segun el estado actual
    */
   updateAllButtons() {
     // Actualizar inputs
@@ -1087,7 +1087,7 @@ export class UIManager {
       this.facesBtn.classList.toggle('active', state.rhombiVisible);
       const status = this.facesBtn.querySelector('.button-status');
       if (status) {
-        status.textContent = state.rhombiVisible ? '●' : '○';
+        status.textContent = state.rhombiVisible ? ' ' : ' ';
       }
     }
 
@@ -1096,7 +1096,7 @@ export class UIManager {
       this.togglePolysBtn.classList.toggle('active', state.polysVisible);
       const status = this.togglePolysBtn.querySelector('.button-status');
       if (status) {
-        status.textContent = state.polysVisible ? '●' : '○';
+        status.textContent = state.polysVisible ? ' ' : ' ';
       }
     }
 
@@ -1105,7 +1105,7 @@ export class UIManager {
       this.toggleLinesBtn.classList.toggle('active', state.linesVisible);
       const status = this.toggleLinesBtn.querySelector('.button-status');
       if (status) {
-        status.textContent = state.linesVisible ? '●' : '○';
+        status.textContent = state.linesVisible ? ' ' : ' ';
       }
     }
 
@@ -1114,7 +1114,7 @@ export class UIManager {
       this.toggleAxisBtn.classList.toggle('active', state.axisVisible);
       const status = this.toggleAxisBtn.querySelector('.button-status');
       if (status) {
-        status.textContent = state.axisVisible ? '●' : '○';
+        status.textContent = state.axisVisible ? ' ' : ' ';
       }
     }
 
@@ -1123,7 +1123,7 @@ export class UIManager {
       this.colorByLevelBtn.classList.toggle('active', state.colorByLevel);
       const status = this.colorByLevelBtn.querySelector('.button-status');
       if (status) {
-        status.textContent = state.colorByLevel ? '●' : '○';
+        status.textContent = state.colorByLevel ? ' ' : ' ';
       }
     }
 
@@ -1132,7 +1132,7 @@ export class UIManager {
       this.cutBtn.classList.toggle('active', state.cutActive);
       const btnText = this.cutBtn.querySelector('span');
       if (btnText) {
-        btnText.textContent = state.cutActive ? 'Desactivar porción' : 'Crear porción';
+        btnText.textContent = state.cutActive ? 'Desactivar porcion' : 'Crear porcion';
       }
     }
 
@@ -1147,14 +1147,14 @@ export class UIManager {
     // Cerrar panel avanzado al inicio
     this.closeAdvancedPanel();
 
-    // En móvil, ocultar info por defecto
+    // En movil, ocultar info por defecto
     if (window.innerWidth <= 640 && this.quickInfo) {
       this.quickInfo.classList.add('collapsed');
     }
 
     this.updateState();
     this.updateAllButtons();
-    this.updateGeometryInfo(); // Inicializar valores geométricos
+    this.updateGeometryInfo(); // Inicializar valores geometricos
     this.sceneManager.requestRebuild();
     this.sceneManager.fitCamera();
     this.updateFacesCount();
@@ -1175,7 +1175,7 @@ export class UIManager {
         const fps = Math.round((frames * 1000) / (currentTime - lastTime));
 
         if (this.fpsCounter) {
-          // Color según rendimiento
+          // Color segun rendimiento
           let color = '#4ade80'; // Verde
           if (fps < 30) color = '#ef4444'; // Rojo
           else if (fps < 45) color = '#f59e0b'; // Naranja

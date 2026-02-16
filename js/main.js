@@ -8,7 +8,7 @@ import { ShareManager } from './share.js';
 import { state, rhombiData } from './state.js';
 
 /**
- * Punto de entrada principal de la aplicación
+ * Punto de entrada principal de la aplicacion
  */
 class App {
   constructor() {
@@ -32,10 +32,10 @@ class App {
     // Inicializar ShareManager
     this.shareManager = new ShareManager(this.uiManager, this.sceneManager);
 
-    // Cargar configuración compartida desde URL
+    // Cargar configuracion compartida desde URL
     this.loadSharedConfig();
 
-    // Configurar botones de exportación
+    // Configurar botones de exportacion
     this.setupExportButton();
     this.setupPDFButton();
     this.setupNodePDFButton();
@@ -44,7 +44,7 @@ class App {
     // Configurar botones de compartir
     this.setupShareButtons();
 
-    // Inicializar la aplicación
+    // Inicializar la aplicacion
     this.uiManager.initialize();
 
     // Configurar modo oscuro/claro
@@ -61,7 +61,7 @@ class App {
 
   async showLoadingScreen() {
     return new Promise((resolve) => {
-      // Simular carga mínima
+      // Simular carga minima
       setTimeout(resolve, 1500);
     });
   }
@@ -154,7 +154,7 @@ class App {
   loadSharedConfig() {
     const loaded = this.shareManager.loadFromURL();
     if (loaded) {
-      console.log('✅ Configuración cargada desde URL');
+      console.log('  Configuracion cargada desde URL');
       setTimeout(() => {
         if (this.uiManager.updateAllButtons) {
           this.uiManager.updateAllButtons();
@@ -233,7 +233,7 @@ class App {
   }
 }
 
-// Iniciar la aplicación cuando el DOM esté listo
+// Iniciar la aplicacion cuando el DOM este listo
 document.addEventListener('DOMContentLoaded', () => {
   new App();
 });
