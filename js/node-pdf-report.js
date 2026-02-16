@@ -61,7 +61,7 @@ export class NodePDFReporter {
       `Dmax = ${this.mm(z.Dmax, 3)} m`,
       `Diametro del piso = ${this.mm(z.floorDiameter || 0, 3)} m`,
       `Altura total visible = ${this.mm(z.visibleHeight, 3)} m`,
-      `Angulo a = ${this.mm(z.aDeg, 2)}deg`,
+      `Angulo a = ${this.mm(z.aDeg, 2)}°`,
       z.cutActive ? `Corte activo: suelo en K(original)=${z.cutLevel} (vista: z=0)` : 'Corte inactivo',
     ];
 
@@ -217,7 +217,7 @@ export class NodePDFReporter {
         if (typeof cur.e.separationToNextDeg === 'number') sep = cur.e.separationToNextDeg;
         else sep = (a2 - a1);
 
-        const text = `${sep.toFixed(1)}deg`;
+        const text = `${sep.toFixed(1)}°`;
 
         const tx = cx + rText * Math.cos(midRad);
         const ty = cy + rText * Math.sin(midRad);
@@ -262,9 +262,9 @@ export class NodePDFReporter {
     doc.text('#', col.idx, y);
     doc.text('Conecta a', col.to, y);
     doc.text('Nivel dest', col.k, y);
-    doc.text('Az[deg]', col.az, y);
-    doc.text(' [deg]', col.sep, y);
-    doc.text('Ang(d)[deg]', col.angd, y);
+    doc.text('Az[°]', col.az, y);
+    doc.text(' [°]', col.sep, y);
+    doc.text('Ang(d)[°]', col.angd, y);
 
     doc.setLineWidth(0.2);
     doc.line(x, y + 1.5, x + width, y + 1.5);

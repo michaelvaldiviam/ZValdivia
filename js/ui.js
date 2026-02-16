@@ -477,12 +477,12 @@ export class UIManager {
     // Calcular altura minima y maxima posible
     const nivelesVisibles = state.cutActive ? state.N - state.cutLevel : state.N;
     
-    // Altura minima: con angulo de 0.1deg
+    // Altura minima: con angulo de 0.1°
     const minAngle = 0.1 * Math.PI / 180;
     const minH1 = (state.Dmax / 2) * Math.tan(minAngle) * Math.sin(Math.PI / state.N);
     const minHeight = minH1 * nivelesVisibles;
     
-    // Altura maxima: con angulo de 89deg
+    // Altura maxima: con angulo de 89°
     const maxAngle = 89 * Math.PI / 180;
     const maxH1 = (state.Dmax / 2) * Math.tan(maxAngle) * Math.sin(Math.PI / state.N);
     const maxHeight = maxH1 * nivelesVisibles;
@@ -524,7 +524,7 @@ export class UIManager {
 
     // Actualizar badge
     if (this.badgeAngle) {
-      this.badgeAngle.textContent = `${aDeg_needed.toFixed(2)}deg`;
+      this.badgeAngle.textContent = `${aDeg_needed.toFixed(2)}°`;
     }
 
     // Actualizar calculos del estado
@@ -539,7 +539,7 @@ export class UIManager {
     this.heightIndicator.classList.remove('editing');
 
     // Mostrar mensaje de exito
-    this.showNotification(`Altura ajustada a ${inputValue.toFixed(3)} m (  = ${aDeg_needed.toFixed(2)}deg)`, 'success');
+    this.showNotification(`Altura ajustada a ${inputValue.toFixed(3)} m (  = ${aDeg_needed.toFixed(2)}°)`, 'success');
 
     // Ocultar despues de 3 segundos para ver el resultado
     this.heightIndicatorTimer = setTimeout(() => {
@@ -639,7 +639,7 @@ export class UIManager {
       this.badgeN.textContent = state.N;
     }
     if (this.badgeAngle) {
-      this.badgeAngle.textContent = `${state.aDeg.toFixed(2)}deg`;
+      this.badgeAngle.textContent = `${state.aDeg.toFixed(2)}°`;
     }
     if (this.badgeDiameter) {
       if (state.cutActive) {
@@ -692,7 +692,7 @@ export class UIManager {
       this.updateHeightDisplay();
       
       if (this.infoH1) this.infoH1.textContent = state.h1.toFixed(3);
-      if (this.statusBadge) this.statusBadge.textContent = `N=${state.N}    =${state.aDeg.toFixed(2)}deg`;
+      if (this.statusBadge) this.statusBadge.textContent = `N=${state.N}    =${state.aDeg.toFixed(2)}°`;
       this.updateGeometryInfo();
     }
   }

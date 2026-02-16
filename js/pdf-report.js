@@ -144,7 +144,7 @@ export class PDFReporter {
     currentY += lineHeight;
     doc.text(`N (Lados): ${data.N}`, startX + 5, currentY);
     currentY += lineHeight;
-    doc.text(`Angulo  : ${data.aDeg.toFixed(2)}deg`, startX + 5, currentY);
+    doc.text(`Angulo  : ${data.aDeg.toFixed(2)}°`, startX + 5, currentY);
     currentY += lineHeight + 3;
 
     // Dimensiones
@@ -719,7 +719,7 @@ static calculateCapAngle(cutLevel) {
     currentY += lineHeight + 2;
     doc.setFont(undefined, 'normal');
     vertexAngles.forEach((angle, i) => {
-      doc.text(`Vertice ${i + 1}: ${angle.toFixed(2)}deg`, startX + 2, currentY);
+      doc.text(`Vertice ${i + 1}: ${angle.toFixed(2)}°`, startX + 2, currentY);
       currentY += lineHeight;
     });
     currentY += 3;
@@ -736,7 +736,7 @@ static calculateCapAngle(cutLevel) {
     doc.setFont(undefined, 'normal');
     dihedralAngles.forEach((angle, i) => {
       if (angle > 0) {
-        doc.text(`Lado ${i + 1}: ${angle.toFixed(2)}deg`, startX + 2, currentY);
+        doc.text(`Lado ${i + 1}: ${angle.toFixed(2)}°`, startX + 2, currentY);
         currentY += lineHeight;
       }
     });
@@ -909,7 +909,7 @@ static calculateCapAngle(cutLevel) {
         const offsetDist = (i === topVertexIndex) ? 14 : 12;
         const offsetX = -(toCenterX / centerDist) * offsetDist;
         const offsetY = -(toCenterY / centerDist) * offsetDist;
-        const label = (i === topVertexIndex) ? `${vertexAngles[i].toFixed(1)}deg  ` : `${vertexAngles[i].toFixed(1)}deg`;
+        const label = (i === topVertexIndex) ? `${vertexAngles[i].toFixed(1)}°  ` : `${vertexAngles[i].toFixed(1)}°`;
         doc.setFont(undefined, 'bold');
         doc.text(label, p.x + offsetX, p.y + offsetY, { align: 'center' });
       }
@@ -935,7 +935,7 @@ static calculateCapAngle(cutLevel) {
           const offsetY = (toCenterY / centerDist) * offsetDist;
 
           doc.setFont(undefined, 'bold');
-          doc.text(` ${dihedralAngles[i].toFixed(1)}deg`, midX + offsetX, midY + offsetY, { align: 'center' });
+          doc.text(` ${dihedralAngles[i].toFixed(1)}°`, midX + offsetX, midY + offsetY, { align: 'center' });
         }
       }
     }
