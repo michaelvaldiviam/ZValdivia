@@ -168,6 +168,23 @@ export class BeamPDFReporter {
       y += 7;
     });
 
+    // Cantidad de vigas por nivel (reglas del usuario)
+    // - En los polos siempre hay N vigas.
+    // - Si hay corte activo: el nivel del suelo visible tiene N vigas.
+    // - Los demas niveles visibles (entre extremos) tienen 2N vigas.
+    const countInfo = this._beamCountsByLevel();
+    y += 6;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(13);
+    doc.text('Cantidad de vigas por nivel', 20, y);
+    y += 10;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(12);
+    countInfo.lines.forEach(t => {
+      doc.text(t, 24, y);
+      y += 7;
+    });
+
     y += 10;
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(13);
@@ -178,6 +195,38 @@ export class BeamPDFReporter {
     doc.text('Autor: Michael Valdivia', 24, y); y += 7;
     doc.text('michaelvaldiviamunoz@gmail.com', 24, y); y += 7;
     doc.text('Chile', 24, y);
+  }
+
+  static _beamCountsByLevel() {
+    const N = Number(state.N) || 0;
+    const kVis = state.cutActive ? (state.N - state.cutLevel + 1) : (state.N + 1);
+    const lines = [];
+
+    if (kVis <= 0 || N <= 0) {
+      return { lines: ['(No disponible)'], total: 0, kVis };
+    }
+
+    const firstLabel = state.cutActive ? 'k0 (suelo)' : 'k0 (polo)';
+    const lastLabel = `k${kVis - 1} (polo)`;
+
+    // Nivel inferior visible
+    lines.push(`${firstLabel}: ${N}`);
+
+    // Niveles intermedios visibles
+    if (kVis > 2) {
+      lines.push(`k1 .. k${kVis - 2}: ${2 * N} c/u (total ${2 * N * (kVis - 2)})`);
+    }
+
+    // Nivel superior visible (polo)
+    if (kVis > 1) {
+      lines.push(`${lastLabel}: ${N}`);
+    }
+
+    const total = (kVis === 1)
+      ? N
+      : (2 * N) + (kVis > 2 ? (2 * N * (kVis - 2)) : 0);
+    lines.push(`Total vigas visibles: ${total}`);
+    return { lines, total, kVis };
   }
 
   static async _addBeamPage(doc, item, pageIndex, sceneManager) {
@@ -199,7 +248,10 @@ export class BeamPDFReporter {
 
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(14);
-    doc.text(`Viga k${item.kVisible}`, x0, y0);
+    const Ncount = Number(state.N) || 0;
+    const kVisCount = state.cutActive ? (state.N - state.cutLevel + 1) : (state.N + 1);
+    const unitsCount = (item.kVisible === 0 || item.kVisible === (kVisCount - 1)) ? Ncount : (2 * Ncount);
+    doc.text(`Viga k${item.kVisible} (${unitsCount} unidades)`, x0, y0);
 
     // Conectividad (si hay datos validos: kLo <-> kHi)
     const connA = pair ? pair.nameLo : (info?.a?.name || 'k?');
