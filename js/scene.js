@@ -635,12 +635,21 @@ export class SceneManager {
     if (mesh.geometry) {
       try {
         const edges = new THREE.EdgesGeometry(mesh.geometry);
-        const mat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9 });
+        // Nota: NO escalamos el outline. Las vigas/conectores pueden estar modelados en coordenadas
+        // absolutas (world-like) dentro de la geometria; escalar el outline alrededor del origen local
+        // provoca un desplazamiento visual (se ve "al lado"). Para asegurar visibilidad, desactivamos
+        // depthTest/depthWrite y usamos renderOrder alto.
+        const mat = new THREE.LineBasicMaterial({
+          color: 0xffffff,
+          transparent: true,
+          opacity: 0.9,
+          depthTest: false,
+          depthWrite: false,
+        });
         const outline = new THREE.LineSegments(edges, mat);
         outline.name = 'zvConnectorOutline';
         outline.renderOrder = 9999;
         outline.frustumCulled = false;
-        outline.scale.set(1.01, 1.01, 1.01);
         mesh.add(outline);
         mesh.userData._zvOutline = outline;
       } catch (e) {
@@ -681,12 +690,18 @@ export class SceneManager {
     if (mesh.geometry) {
       try {
         const edges = new THREE.EdgesGeometry(mesh.geometry);
-        const mat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85 });
+        // Igual que en conectores: no escalar para evitar "offset" cuando la geometria esta en coords absolutas.
+        const mat = new THREE.LineBasicMaterial({
+          color: 0xffffff,
+          transparent: true,
+          opacity: 0.85,
+          depthTest: false,
+          depthWrite: false,
+        });
         const outline = new THREE.LineSegments(edges, mat);
         outline.name = 'zvBeamOutline';
         outline.renderOrder = 9998;
         outline.frustumCulled = false;
-        outline.scale.set(1.01, 1.01, 1.01);
         mesh.add(outline);
         mesh.userData._zvBeamOutline = outline;
       } catch (e) {

@@ -619,6 +619,12 @@ if (isExtra) {
 
     // Para PDF, canonicalizamos la geometria en el sistema (e,w,t) para evitar cizalla/torsion.
     // Esto hace que los extremos (planta y lateral) queden perfectamente ortogonales y paralelos.
+    // Nota importante:
+    // - La canonicalización (caja ortogonal) es útil para eliminar cizalla/torsión en algunas vigas
+    //   cuando se quiere una vista ortogonal "idealizada".
+    // - Pero en la vista lateral queremos que se aprecie el bisel real de los extremos.
+    //   Por eso, para la vista lateral usamos los vértices reales (vertsW).
+    //   (La vista en planta ya dibuja biseles con un método específico.)
     const vertsPdf = BeamPDFReporter._canonicalizeVertsForPdf(vertsW, basis);
 
     // Punto de referencia sobre la arista del zonohedro (cara exterior).
@@ -654,7 +660,11 @@ if (isExtra) {
     const mainBox = { x: 14, y: 42, w: 132, h: 72 };
     const isoBox = { x: 152, y: 42, w: 44, h: 44 };
     const zomeBox = { x: 152, y: 92, w: 44, h: 36 };
-    const sideBox = { x: 14, y: 132, w: 182, h: 60 };
+
+    // Vista lateral: bajarla para que no choque con la miniatura "Ubicacion de la viga"
+    // (especialmente en el extremo derecho donde se dibujan k/Ang).
+    const sideBoxY = zomeBox.y + zomeBox.h + 16; // margen inferior extra
+    const sideBox = { x: 14, y: sideBoxY, w: 182, h: 60 };
 
     // Vista principal: planta (Largo x Ancho) con biseles visibles (lineas ocultas en discontinua)
     this._drawBeamPlanBevel(doc, vertsW, basis, {
@@ -709,7 +719,8 @@ if (isExtra) {
       }
     }
 
-    this._drawBeamView(doc, vertsPdf, basis, {
+    // Vista lateral: usar vértices reales para que el bisel se vea.
+    this._drawBeamView(doc, vertsW, basis, {
       viewDir: basis.w.clone(),
       uAxis: basis.e,
       vAxis: vAxisSide,
@@ -1364,17 +1375,26 @@ static _edges() {
       doc.text('...', midX, midY, { align: 'center', baseline: 'middle' });
     }
 
-    // Etiquetas de conectores + Ang(d) en extremos
+    // Etiquetas de conectores + Ang(d) ancladas al dibujo (evita que queden “muy arriba”)
+    // Las ubicamos justo sobre la viga (top real del dibujo), alineadas con los extremos visibles.
+    const yBeamTop = box.y + pad + vOffset; // top real del dibujo en el box
+    // Subir etiquetas para que no choquen con el contorno superior de la viga.
+    // Importante: mantener BOTH por encima de yBeamTop (top real del dibujo).
+    const labelY = Math.max(box.y + 2.0, yBeamTop - 8.0);
+    const angY = Math.max(box.y + 2.0, yBeamTop - 4.2);
+
+    const xLabelL = xLeft0;
+    const xLabelR = xRight0;
+
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
-    // Bajar las etiquetas ligeramente para separar del titulo
-    doc.text(String(leftLabel || ''), box.x, box.y + 0.5, { align: 'left' });
-    doc.text(String(rightLabel || ''), box.x + box.w, box.y + 0.5, { align: 'right' });
+    doc.text(String(leftLabel || ''), xLabelL, labelY, { align: 'left' });
+    doc.text(String(rightLabel || ''), xLabelR, labelY, { align: 'right' });
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
-    if (Number.isFinite(leftAng)) doc.text(`Ang(d) ${leftAng.toFixed(1)}°`, box.x, box.y + 4.5, { align: 'left' });
-    if (Number.isFinite(rightAng)) doc.text(`Ang(d) ${rightAng.toFixed(1)}°`, box.x + box.w, box.y + 4.5, { align: 'right' });
+    if (Number.isFinite(leftAng)) doc.text(`Ang(d) ${leftAng.toFixed(1)}°`, xLabelL, angY, { align: 'left' });
+    if (Number.isFinite(rightAng)) doc.text(`Ang(d) ${rightAng.toFixed(1)}°`, xLabelR, angY, { align: 'right' });
   }
 
   
@@ -1406,17 +1426,6 @@ static _edges() {
     doc.setFontSize(10);
     // Un poco mas arriba para no... 
     doc.text(title, box.x, box.y - 6);
-
-    // Labels + Ang(d)
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(9);
-    if (leftLabel) doc.text(String(leftLabel), box.x, box.y + 0.5, { align: 'left' });
-    if (rightLabel) doc.text(String(rightLabel), box.x + box.w, box.y + 0.5, { align: 'right' });
-
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8);
-    if (Number.isFinite(leftAng)) doc.text(`Ang(d) ${leftAng.toFixed(1)}°`, box.x, box.y + 4.5, { align: 'left' });
-    if (Number.isFinite(rightAng)) doc.text(`Ang(d) ${rightAng.toFixed(1)}°`, box.x + box.w, box.y + 4.5, { align: 'right' });
 
     // --- Vista rota (lateral): tamano estable en papel ---
     // Igual que en planta: priorizamos que los extremos se vean grandes y legibles.
@@ -1474,6 +1483,46 @@ static _edges() {
     const drawingHSide = spanV * scale;
     const vOffsetSide = Math.max(0, ((box.h - 2 * pad) - drawingHSide) / 2);
     const mapV = (v) => box.y + pad + vOffsetSide + (maxV - v) * scale;
+
+    // Labels + Ang(d) anclados al dibujo (top real del dibujo), alineados con extremos.
+    // Importante: NO usar un clamp que colapse ambas líneas (k y Ang) al mismo Y.
+    // Permitimos que el texto suba levemente por encima del box (box.y) porque esta
+    // vista ya tiene su propio título en (box.y - 6) y suele haber margen suficiente.
+    const ySideTop = box.y + pad + vOffsetSide;
+
+    const safeMinY = box.y - 2.0;         // no subir más (evita chocar con el título)
+    const lineGap = 4.2;                 // separación entre k y Ang(d)
+    const minGapToBeam = 2.2;            // separación mínima entre Ang(d) y la línea superior de la viga
+
+    let sideLabelY = Math.max(safeMinY, ySideTop - 12.0);
+    let sideAngY = sideLabelY + lineGap;
+
+    // Asegurar que Ang(d) no toque el contorno superior.
+    const maxAngY = ySideTop - minGapToBeam;
+    if (sideAngY > maxAngY) {
+      const shift = sideAngY - maxAngY;
+      sideLabelY -= shift;
+      sideAngY -= shift;
+
+      // Clamp final si el shift empuja demasiado arriba.
+      if (sideLabelY < safeMinY) {
+        sideLabelY = safeMinY;
+        sideAngY = Math.min(maxAngY, sideLabelY + lineGap);
+      }
+    }
+    const xSideL = xLeft0;
+    const xSideR = xRight0;
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.text(String(leftLabel || ''), xSideL, sideLabelY, { align: 'left' });
+    doc.text(String(rightLabel || ''), xSideR, sideLabelY, { align: 'right' });
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    if (Number.isFinite(leftAng)) doc.text(`Ang(d) ${leftAng.toFixed(1)}°`, xSideL, sideAngY, { align: 'left' });
+    if (Number.isFinite(rightAng)) doc.text(`Ang(d) ${rightAng.toFixed(1)}°`, xSideR, sideAngY, { align: 'right' });
+
 
     const drawSegmentMapped = (p0, p1, dashed) => {
       const x0 = mapU(p0.u), x1 = mapU(p1.u);
