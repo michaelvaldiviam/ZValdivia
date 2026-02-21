@@ -597,6 +597,16 @@ if (isExtra) {
     //   w = eje de ANCHO (valor que el usuario ingresa)
     //   t = eje de ALTO  (valor que el usuario ingresa)
     // Esto debe mantenerse estable para no afectar la vista lateral (Largo vs Alto).
+    // Para vigas diagonales/extra, la heurística de "4 más cercanos al eje" puede fallar.
+    // Si tenemos objFaces/objQuads, inferimos la cara exterior de forma determinista.
+    const eDir = (info && info.edgeDir && info.edgeDir.isVector3) ? info.edgeDir
+      : (info && info.a && info.b && info.a.pos && info.b.pos ? new THREE.Vector3().subVectors(info.b.pos, info.a.pos) : null);
+
+    const outer = BeamPDFReporter._inferOuterFaceFromObjFaces(mesh, info, vertsW, eDir);
+    if (outer) {
+      if (!info.faces) info.faces = {};
+      info.faces.outer = outer;
+    }
     const basis = this._computeBeamBasis(vertsW, info, { widthMm, heightMm });
     if (!basis) {
       doc.setFontSize(11);
@@ -606,6 +616,10 @@ if (isExtra) {
 
     // Forzar orientacion izquierda->derecha por niveles (kLo -> kHi)
     this._ensureBasisDirectionByLevels(basis, info, pair);
+
+    // Para PDF, canonicalizamos la geometria en el sistema (e,w,t) para evitar cizalla/torsion.
+    // Esto hace que los extremos (planta y lateral) queden perfectamente ortogonales y paralelos.
+    const vertsPdf = BeamPDFReporter._canonicalizeVertsForPdf(vertsW, basis);
 
     // Punto de referencia sobre la arista del zonohedro (cara exterior).
     // Normalmente es el punto medio entre conectores A/B.
@@ -695,7 +709,7 @@ if (isExtra) {
       }
     }
 
-    this._drawBeamView(doc, vertsW, basis, {
+    this._drawBeamView(doc, vertsPdf, basis, {
       viewDir: basis.w.clone(),
       uAxis: basis.e,
       vAxis: vAxisSide,
@@ -723,6 +737,56 @@ if (isExtra) {
       out.push(new THREE.Vector3(pos.getX(i), pos.getY(i), pos.getZ(i)));
     }
     return out;
+  }
+  static _inferOuterFaceFromObjFaces(mesh, info, vertsW, eDir) {
+    const faces = (mesh && mesh.userData)
+      ? (mesh.userData.objFaces || mesh.userData.objQuads)
+      : null;
+
+    const A = info && info.a && info.a.pos && info.a.pos.isVector3 ? info.a.pos : null;
+    const B = info && info.b && info.b.pos && info.b.pos.isVector3 ? info.b.pos : null;
+    if (!Array.isArray(faces) || faces.length === 0 || !A || !B) return null;
+    if (!eDir || !eDir.isVector3 || eDir.lengthSq() < 1e-12) return null;
+
+    const e = eDir.clone().normalize();
+
+    let best = null;
+    let bestScore = Infinity;
+
+    for (const f of faces) {
+      if (!Array.isArray(f) || f.length < 4) continue;
+      const idx = f.slice(0, 4);
+
+      const p0 = vertsW[idx[0]], p1 = vertsW[idx[1]], p2 = vertsW[idx[2]];
+      if (!p0 || !p1 || !p2) continue;
+
+      const n = new THREE.Vector3().crossVectors(
+        new THREE.Vector3().subVectors(p1, p0),
+        new THREE.Vector3().subVectors(p2, p0)
+      );
+      const nLen = n.length();
+      if (nLen < 1e-12) continue;
+      n.divideScalar(nLen);
+
+      // La normal de la cara debe ser casi perpendicular a e (porque e está en la cara)
+      const ne = Math.abs(n.dot(e));
+      if (ne > 0.15) continue; // tolerancia (ajustable)
+
+      // Distancia de A y B al plano de la cara
+      const d0 = -n.dot(p0);
+      const distA = Math.abs(n.dot(A) + d0);
+      const distB = Math.abs(n.dot(B) + d0);
+
+      // Score: que el plano contenga A/B y además cumpla n ⟂ e
+      const score = Math.max(distA, distB) + 0.01 * ne;
+
+      if (score < bestScore) {
+        bestScore = score;
+        best = idx;
+      }
+    }
+
+    return best;
   }
 
     static _computeBeamBasis(vertsW, info = null, dims = null) {
@@ -886,6 +950,52 @@ const facePts = faceIdx.map(i => vertsW[i]);
     };
   }
 
+
+
+  static _canonicalizeVertsForPdf(vertsW, basis) {
+    // Construye una "caja ortogonal" en el sistema (e,w,t) a partir de los vertices reales.
+    // Esto elimina cizalla/torsion en vigas diagonales y garantiza extremos perfectamente ortogonales en PDF.
+    if (!vertsW || !basis || !basis.e || !basis.w || !basis.t) return vertsW;
+
+    const e = basis.e, w = basis.w, t = basis.t;
+
+    let uMin = Infinity, uMax = -Infinity;
+    let vMin = Infinity, vMax = -Infinity;
+    let zMin = Infinity, zMax = -Infinity;
+
+    for (const p of vertsW) {
+      const u = p.dot(e);
+      const v = p.dot(w);
+      const z = p.dot(t);
+      if (u < uMin) uMin = u;
+      if (u > uMax) uMax = u;
+      if (v < vMin) vMin = v;
+      if (v > vMax) vMax = v;
+      if (z < zMin) zMin = z;
+      if (z > zMax) zMax = z;
+    }
+
+    if (!isFinite(uMin) || !isFinite(uMax) || !isFinite(vMin) || !isFinite(vMax) || !isFinite(zMin) || !isFinite(zMax)) {
+      return vertsW;
+    }
+
+    const mk = (u, v, z) => new THREE.Vector3()
+      .addScaledVector(e, u)
+      .addScaledVector(w, v)
+      .addScaledVector(t, z);
+
+    // Indices compatibles con _edges(): cara "inferior" (zMin) y "superior" (zMax)
+    return [
+      mk(uMin, vMin, zMin), // 0
+      mk(uMax, vMin, zMin), // 1
+      mk(uMax, vMax, zMin), // 2
+      mk(uMin, vMax, zMin), // 3
+      mk(uMin, vMin, zMax), // 4
+      mk(uMax, vMin, zMax), // 5
+      mk(uMax, vMax, zMax), // 6
+      mk(uMin, vMax, zMax), // 7
+    ];
+  }
 
   static _orderEndpointsByE(info, eAxis) {
     const aPos = (info && info.a) ? info.a.pos : null;
@@ -1186,8 +1296,11 @@ static _edges() {
       if (u >= rightCutU - 1e-12) return xRightStart + (u - rightCutU) * scale;
       return null; // zona omitida
     }
+    // Centrar el dibujo verticalmente en el box disponible
+    const drawingH = spanV * scale;
+    const vOffset = Math.max(0, ((box.h - 2 * pad) - drawingH) / 2);
     function mapY(v) {
-      return box.y + pad + (v - minV) * scale;
+      return box.y + pad + vOffset + (v - minV) * scale;
     }
 
     // Dibuja un segmento (con clipping si hay break)
@@ -1357,7 +1470,10 @@ static _edges() {
       if (u >= rightCutU - 1e-12) return xRightStart + (u - rightCutU) * scale;
       return null;
     };
-    const mapV = (v) => box.y + pad + (maxV - v) * scale;
+    // Centrar el dibujo verticalmente en el box disponible
+    const drawingHSide = spanV * scale;
+    const vOffsetSide = Math.max(0, ((box.h - 2 * pad) - drawingHSide) / 2);
+    const mapV = (v) => box.y + pad + vOffsetSide + (maxV - v) * scale;
 
     const drawSegmentMapped = (p0, p1, dashed) => {
       const x0 = mapU(p0.u), x1 = mapU(p1.u);
@@ -1393,9 +1509,10 @@ static _edges() {
     if (broken) {
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(14);
-	      const midX = box.x + box.w / 2;
-	      const midY = box.y + box.h / 2;
-	      doc.text('...', midX, midY, { align: 'center', baseline: 'middle' });
+      const midX = box.x + box.w / 2;
+      // Centrar el "..." verticalmente dentro de la zona dibujada (no del box completo)
+      const midY_side = box.y + pad + vOffsetSide + drawingHSide / 2;
+      doc.text('...', midX, midY_side, { align: 'center', baseline: 'middle' });
     }
   }
 

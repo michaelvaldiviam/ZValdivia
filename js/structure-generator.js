@@ -31,24 +31,27 @@ export class StructureGenerator {
     });
 
     this._tmpV = new THREE.Vector3();
+    // Cache de geometrías de cilindros a nivel de instancia para poder hacer dispose correcto
+    this._cylGeomCache = new Map();
   }
 
   clear() {
     while (this.group.children.length) {
       const ch = this.group.children[0];
-      // Algunos conectores comparten geometria (cache). No debemos dispose()
-
-      // una geometria compartida, porque deja a otros meshes apuntando a un
-
-      // buffer liberado y la estructura puede \"desaparecer\" al mover la camara.
-
+      // Las geometrías del cache de instancia se disponen por separado abajo.
+      // Solo disponemos geometrías que NO están en el cache de cilindros.
       if (ch.geometry && !(ch.geometry.userData && ch.geometry.userData._zvCachedGeom)) {
-
         ch.geometry.dispose();
-
       }
       if (ch.material && ch.material.dispose) ch.material.dispose();
       this.group.remove(ch);
+    }
+    // Disponer todas las geometrías cacheadas de cilindros y limpiar el cache
+    if (this._cylGeomCache) {
+      for (const geom of this._cylGeomCache.values()) {
+        try { geom.dispose(); } catch (e) {}
+      }
+      this._cylGeomCache.clear();
     }
   }
 
@@ -132,8 +135,8 @@ export class StructureGenerator {
     };
 
 
-    // Cache de geometria por (radio, profundidad)
-    const cylGeomCache = new Map();
+    // Cache de geometria por (radio, profundidad) - a nivel de instancia para dispose correcto
+    const cylGeomCache = this._cylGeomCache;
     const getCylGeom = (radius, depth, seg = 20) => {
       const key = `${radius.toFixed(6)}_${depth.toFixed(6)}_${seg}`;
       const cached = cylGeomCache.get(key);

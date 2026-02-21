@@ -10,6 +10,12 @@ export class UIManager {
     this.debounceTimer = null;
     this.throttleTimer = null;
     this.isUpdating = false;
+    // Timers separados para evitar condición de carrera entre debounce y throttle
+    this._cutDebounceTimer = null;
+    this._floorDebounceTimer = null;
+    // AbortControllers para los keydown listeners de los modales (cleanup correcto)
+    this._beamModalAbortCtrl = null;
+    this._connectorModalAbortCtrl = null;
 
     this.getDOMElements();
     this.setupEventListeners();
@@ -1477,12 +1483,13 @@ _updateConnectorTooltipPosition() {
     btnRestore.addEventListener('click', () => this._restoreBeamEditModal());
     btnDelete.addEventListener('click', () => this._deleteSelectedBeamFromModal());
 
-    const onKey = (e) => {
+    // Usar AbortController para poder remover el listener al destruir el modal
+    this._beamModalAbortCtrl = new AbortController();
+    document.addEventListener('keydown', (e) => {
       if (overlay.classList.contains('zv-hidden')) return;
       if (e.key === 'Escape') close();
       if (e.key === 'Enter') this._applyBeamEditModal();
-    };
-    document.addEventListener('keydown', onKey);
+    }, { signal: this._beamModalAbortCtrl.signal });
 
     this._beamModalOverlay = overlay;
     this._beamModalDeleteBtn = btnDelete;
@@ -1809,13 +1816,13 @@ _updateConnectorTooltipPosition() {
       try { this._connectorModalOffset.value = '0'; } catch (e) {}
     });
 
-    // Enter aplica, Esc cierra
-    const onKey = (e) => {
+    // Usar AbortController para poder remover el listener al destruir el modal
+    this._connectorModalAbortCtrl = new AbortController();
+    document.addEventListener('keydown', (e) => {
       if (overlay.classList.contains('zv-hidden')) return;
       if (e.key === 'Escape') close();
       if (e.key === 'Enter') this._applyConnectorEditModal();
-    };
-    document.addEventListener('keydown', onKey);
+    }, { signal: this._connectorModalAbortCtrl.signal });
   }
 
   _openConnectorEditModal(hit) {
@@ -2384,11 +2391,10 @@ _updateConnectorTooltipPosition() {
     // Actualizar valores inmediatamente para feedback visual
     this.syncInputValues(source);
 
-    // Cancelar timer anterior
+    // Timer independiente para el debounce de inputs numéricos
     if (this.debounceTimer) clearTimeout(this.debounceTimer);
-
-    // Esperar 200ms despues del ultimo cambio para reconstruir (aumentado para mejor performance)
     this.debounceTimer = setTimeout(() => {
+      this.debounceTimer = null;
       this.performSync();
     }, 200);
   }
@@ -2398,16 +2404,17 @@ _updateConnectorTooltipPosition() {
     // Actualizar valores inmediatamente
     this.syncInputValues(source);
 
-    // Si ya hay una actualizacion en curso, salir
+    // Throttle independiente: no comparte estado con debounce
     if (this.isUpdating) return;
-
-    // Marcar como actualizando
     this.isUpdating = true;
 
-    // Throttle: maximo una reconstruccion cada 150ms (aumentado de 100ms)
-    setTimeout(() => {
-      this.performSync();
+    this.throttleTimer = setTimeout(() => {
+      this.throttleTimer = null;
       this.isUpdating = false;
+      // Solo ejecutar si no hay un debounce pendiente (el debounce tiene mayor precisión)
+      if (!this.debounceTimer) {
+        this.performSync();
+      }
     }, 150);
   }
 
@@ -2446,14 +2453,16 @@ _updateConnectorTooltipPosition() {
   performSync() {
     this.updateState();
     this.sceneManager.requestRebuild();
+    if (this.sceneManager.markDirty) this.sceneManager.markDirty();
     this.updateFacesCount();
   }
 
   //   NUEVO: Debouncing para diametro del piso
   debouncedSyncFloorDiameter(source) {
     this.syncFloorDiameterValues(source);
-    if (this.debounceTimer) clearTimeout(this.debounceTimer);
-    this.debounceTimer = setTimeout(() => {
+    if (this._floorDebounceTimer) clearTimeout(this._floorDebounceTimer);
+    this._floorDebounceTimer = setTimeout(() => {
+      this._floorDebounceTimer = null;
       this.performFloorDiameterSync();
     }, 200);
   }
@@ -2464,8 +2473,10 @@ _updateConnectorTooltipPosition() {
     if (this.isUpdating) return;
     this.isUpdating = true;
     setTimeout(() => {
-      this.performFloorDiameterSync();
       this.isUpdating = false;
+      if (!this._floorDebounceTimer) {
+        this.performFloorDiameterSync();
+      }
     }, 150);
   }
 
@@ -2497,8 +2508,9 @@ _updateConnectorTooltipPosition() {
 
   debouncedSyncCutInputs(source) {
     this.syncCutValues(source);
-    if (this.debounceTimer) clearTimeout(this.debounceTimer);
-    this.debounceTimer = setTimeout(() => {
+    if (this._cutDebounceTimer) clearTimeout(this._cutDebounceTimer);
+    this._cutDebounceTimer = setTimeout(() => {
+      this._cutDebounceTimer = null;
       this.performCutSync();
     }, 150);
   }
@@ -2508,8 +2520,10 @@ _updateConnectorTooltipPosition() {
     if (this.isUpdating) return;
     this.isUpdating = true;
     setTimeout(() => {
-      this.performCutSync();
       this.isUpdating = false;
+      if (!this._cutDebounceTimer) {
+        this.performCutSync();
+      }
     }, 120);
   }
 

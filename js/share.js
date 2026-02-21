@@ -153,24 +153,27 @@ export class ShareManager {
   }
 
   /**
-   * Fallback para copiar URL
+   * Fallback para copiar URL cuando navigator.clipboard no está disponible
    */
   showFallbackCopy(url) {
-    const textarea = document.createElement('textarea');
-    textarea.value = url;
-    textarea.style.position = 'fixed';
-    textarea.style.opacity = '0';
-    document.body.appendChild(textarea);
-    textarea.select();
-    
+    // Intentar con la API de selección de texto (más compatible que execCommand)
     try {
-      document.execCommand('copy');
-      this.uiManager.showNotification(' Enlace copiado!', 'success');
-    } catch (err) {
-      this.uiManager.showNotification('No se pudo copiar. Comparte esta URL: ' + url, 'info');
-    }
-    
-    document.body.removeChild(textarea);
+      const textarea = document.createElement('textarea');
+      textarea.value = url;
+      textarea.style.cssText = 'position:fixed;opacity:0;pointer-events:none;';
+      document.body.appendChild(textarea);
+      textarea.focus();
+      textarea.select();
+      const ok = document.execCommand('copy');
+      document.body.removeChild(textarea);
+      if (ok) {
+        this.uiManager.showNotification('Enlace copiado!', 'success');
+        return;
+      }
+    } catch (_) { /* continuar al fallback visual */ }
+
+    // Último recurso: mostrar URL en prompt para que el usuario la copie manualmente
+    window.prompt('Copia esta URL para compartir:', url);
   }
 
   /**

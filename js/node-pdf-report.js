@@ -280,9 +280,52 @@ static _parseConnectorKey(key) {
       const sL = Math.hypot(dirSum.x, dirSum.y, dirSum.z) || 1;
       const directive = { x: dirSum.x / sL, y: dirSum.y / sL, z: dirSum.z / sL };
 
-      // Construir edges con azimut y separaciones
+      // --- Base local del conector (vista desde el exterior) ---
+      //
+      // Caso 1 — POLOS (radio ≈ 0):
+      //   Vista de planta (paraguas). Se mira desde afuera del polo, es decir:
+      //   - Polo superior (kVis = visibleLevels): vista desde arriba (+Z). right=+X, up=+Y.
+      //   - Polo inferior real (kVis = 0, sin corte): vista desde abajo (-Z). right=+X, up=-Y
+      //     (espejo de Y para mantener la chirality correcta al mirar desde -Z).
+      //   En ambos casos az = atan2(localUp, localRight) = atan2(±dy, dx), dando un
+      //   diagrama de "paraguas" visto de planta con las vigas como radios.
+      //
+      // Caso 2 — NIVELES INTERMEDIOS (radio > 0):
+      //   Vista desde el exterior de la superficie del zonohedro.
+      //   right_view = tangente horaria (CW) en XY = (sin θ, -cos θ, 0)
+      //   up_view    = eje Z global               = (0, 0, 1)
+      //   az = atan2(dz, d·tangente_CW)
+
+      const rxy = upos ? Math.hypot(upos.x, upos.y) : 0;
+      const isPole = rxy < 1e-6;
+
+      // Determinar si este polo es el superior o el inferior
+      let poleIsTop = false;
+      if (isPole && upos) {
+        // El polo superior tiene z > 0; el inferior tiene z ≈ 0 (o muy pequeño)
+        poleIsTop = (upos.z > 0.001);
+      }
+
+      // Construir edges con azimut proyectado en marco local y separaciones
       const edges = dirs.map(d => {
-        let az = Math.atan2(d.y, d.x) * 180 / Math.PI;
+        let az;
+        if (isPole) {
+          // Polo: vista de planta con eje Z del conector como eje de visión.
+          // Ambos polos (superior e inferior) se ven igual desde su eje:
+          // proyectamos directamente en XY global → atan2(dy, dx).
+          // El polo inferior tiene Z apuntando hacia abajo en el mundo,
+          // el superior hacia arriba — pero el diagrama de agujeros es el mismo
+          // en ambos casos (paraguas visto desde el eje).
+          az = Math.atan2(d.y, d.x) * 180 / Math.PI;
+        } else {
+          // Vista lateral desde el exterior: plano (tangente_CW, Z)
+          const cosT = upos.x / rxy;
+          const sinT = upos.y / rxy;
+          // Tangente horaria (CW visto desde +Z): (sin θ, -cos θ, 0)
+          const localRight =  d.x * sinT + d.y * (-cosT); // d · tangente_CW
+          const localUp    =  d.z;                          // componente vertical
+          az = Math.atan2(localUp, localRight) * 180 / Math.PI;
+        }
         if (az < 0) az += 360;
 
         let toVisibleKIndex = null;
@@ -582,9 +625,20 @@ static _parseConnectorKey(key) {
     // Circulo guia
     doc.circle(cx, cy, R, 'S');
 
+    // Determinar si este nodo es un polo (radio ≈ 0 en XY)
+    const nodePos = node.pos;
+    const nodeRxy = nodePos ? Math.hypot(nodePos.x || 0, nodePos.y || 0) : 0;
+    const nodeIsPole = nodeRxy < 1e-6;
+    const nodeIsTopPole = nodeIsPole && nodePos && (nodePos.z > 0.001);
+
+    // Título del diagrama: indica el tipo de vista
+    const diagramLabel = nodeIsPole
+      ? (nodeIsTopPole ? 'Planta polo superior' : 'Planta polo inferior')
+      : 'Proyeccion (exterior)';
+
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
-    doc.text('Proyeccion (exterior)', cx, y - 2, { align: 'center' });
+    doc.text(diagramLabel, cx, y - 2, { align: 'center' });
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
@@ -601,30 +655,33 @@ static _parseConnectorKey(key) {
       return { e, ang };
     }).sort((a, b) => a.ang - b.ang);
 
-    // Rotacion canonica: arriba = conexiones hacia niveles superiores (dk>0)
-    var targetUpDeg = 90;
-    var sumCos = 0, sumSin = 0, hasUp = false;
-    var kU = (node && typeof node.visibleKIndex === 'number') ? node.visibleKIndex : null;
-    for (var ri = 0; ri < items.length; ri++) {
-      var it = items[ri];
-      var toK = (it && it.e && typeof it.e.toVisibleKIndex === 'number') ? it.e.toVisibleKIndex : null;
-      if (kU != null && toK != null) {
-        var dk = toK - kU;
-        if (dk > 0) {
-          var w = dk; if (w < 1) w = 1;
-          var rad0 = (it.ang * Math.PI) / 180;
-          sumCos += w * Math.cos(rad0);
-          sumSin += w * Math.sin(rad0);
-          hasUp = true;
+    // Rotacion canónica del diagrama:
+    // - Polos: sin rotación (los radios ya están en el plano XY correcto).
+    // - Niveles intermedios: rotar para que las conexiones dk>0 queden arriba.
+    var rotDeg = 0;
+    if (!nodeIsPole) {
+      var targetUpDeg = 90;
+      var sumCos = 0, sumSin = 0, hasUp = false;
+      var kU = (node && typeof node.visibleKIndex === 'number') ? node.visibleKIndex : null;
+      for (var ri = 0; ri < items.length; ri++) {
+        var it = items[ri];
+        var toK = (it && it.e && typeof it.e.toVisibleKIndex === 'number') ? it.e.toVisibleKIndex : null;
+        if (kU != null && toK != null) {
+          var dk = toK - kU;
+          if (dk > 0) {
+            var w = dk; if (w < 1) w = 1;
+            var rad0 = (it.ang * Math.PI) / 180;
+            sumCos += w * Math.cos(rad0);
+            sumSin += w * Math.sin(rad0);
+            hasUp = true;
+          }
         }
       }
-    }
-
-    var rotDeg = 0;
-    if (hasUp) {
-      var theta = Math.atan2(sumSin, sumCos) * 180 / Math.PI;
-      if (theta < 0) theta += 360;
-      rotDeg = targetUpDeg - theta;
+      if (hasUp) {
+        var theta = Math.atan2(sumSin, sumCos) * 180 / Math.PI;
+        if (theta < 0) theta += 360;
+        rotDeg = targetUpDeg - theta;
+      }
     }
 
     // Aplica rotacion solo al diagrama (no cambia los datos del nodo)

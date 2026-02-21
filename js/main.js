@@ -17,61 +17,48 @@ class App {
   }
 
   async init() {
-    // Mostrar pantalla de carga
-    await this.showLoadingScreen();
+    // Mostrar pantalla de carga e inicializar la app EN PARALELO
+    const [,] = await Promise.all([
+      this.showLoadingScreen(),
+      this.initApp(),
+    ]);
 
-    // Obtener canvas
+    // Ocultar pantalla de carga
+    await this.hideLoadingScreen();
+    this.loadingComplete = true;
+  }
+
+  async initApp() {
     const canvas = document.getElementById('c');
 
-    // Inicializar el gestor de escena
     this.sceneManager = new SceneManager(canvas);
-
-    // Inicializar el gestor de UI
     this.uiManager = new UIManager(this.sceneManager);
-
-    // Inicializar ShareManager
     this.shareManager = new ShareManager(this.uiManager, this.sceneManager);
 
-    // Cargar configuracion compartida desde URL
     this.loadSharedConfig();
 
-    // Configurar botones de exportacion
     this.setupExportButton();
     this.setupPDFButton();
     this.setupNodePDFButton();
     this.setupBeamsPDFButton();
-    
-    // Configurar botones de compartir
     this.setupShareButtons();
 
-    // Inicializar la aplicacion
     this.uiManager.initialize();
-
-    // Configurar modo oscuro/claro
     this.setupThemeToggle();
-
-    // Iniciar el loop de renderizado
     this.sceneManager.render();
-
-    // Ocultar pantalla de carga
-    await this.hideLoadingScreen();
-
-    this.loadingComplete = true;
   }
 
   async showLoadingScreen() {
-    return new Promise((resolve) => {
-      // Simular carga minima
-      setTimeout(resolve, 1500);
-    });
+    // Tiempo mínimo de visualización de la pantalla de carga (estética)
+    // En móviles la primera pintura puede ser muy rápida; dejamos un mínimo
+    // más cómodo para que el usuario alcance a ver el logo.
+    return new Promise((resolve) => setTimeout(resolve, 2200));
   }
 
   setupNodePDFButton() {
     const exportNodePdfBtn = document.getElementById('exportNodePdfBtn');
     if (exportNodePdfBtn) {
       exportNodePdfBtn.addEventListener('click', async () => {
-        // El PDF de nodos/conectores debe reflejar la CONECTIVIDAD REAL de la estructura,
-        // independiente de si las caras del zonohedro estan visibles.
         const sg = this.sceneManager && this.sceneManager.structureGroup;
         const hasStructure = sg && sg.children && sg.children.length > 0;
         if (!hasStructure) {
@@ -97,7 +84,6 @@ class App {
     const exportBeamsPdfBtn = document.getElementById('exportBeamsPdfBtn');
     if (exportBeamsPdfBtn) {
       exportBeamsPdfBtn.addEventListener('click', async () => {
-        // Requiere que la estructura exista (generada al menos una vez)
         const sg = this.sceneManager && this.sceneManager.structureGroup;
         const hasStructure = sg && sg.children && sg.children.length > 0;
         if (!hasStructure) {
@@ -119,7 +105,6 @@ class App {
     }
   }
 
-
   async hideLoadingScreen() {
     const loadingScreen = document.getElementById('loadingScreen');
     if (loadingScreen) {
@@ -132,7 +117,6 @@ class App {
   setupThemeToggle() {
     const themeToggle = document.getElementById('themeToggle');
     if (themeToggle) {
-      // Cargar preferencia guardada
       const savedTheme = localStorage.getItem('theme') || 'dark';
       if (savedTheme === 'light') {
         document.body.classList.remove('dark-mode');
@@ -141,14 +125,11 @@ class App {
 
       themeToggle.addEventListener('click', () => {
         const isLight = document.body.classList.contains('light-mode');
-        
         if (isLight) {
-          document.body.classList.remove('light-mode');
-          document.body.classList.add('dark-mode');
+          document.body.classList.replace('light-mode', 'dark-mode');
           localStorage.setItem('theme', 'dark');
         } else {
-          document.body.classList.remove('dark-mode');
-          document.body.classList.add('light-mode');
+          document.body.classList.replace('dark-mode', 'light-mode');
           localStorage.setItem('theme', 'light');
         }
       });
@@ -158,7 +139,7 @@ class App {
   loadSharedConfig() {
     const loaded = this.shareManager.loadFromURL();
     if (loaded) {
-      console.log('  Configuracion cargada desde URL');
+      console.log('Configuracion cargada desde URL');
       setTimeout(() => {
         if (this.uiManager.updateAllButtons) {
           this.uiManager.updateAllButtons();
@@ -194,7 +175,6 @@ class App {
         }
 
         this.uiManager.showNotification('Generando reporte PDF...', 'info');
-
         await new Promise(resolve => setTimeout(resolve, 500));
 
         try {
@@ -203,7 +183,6 @@ class App {
             this.sceneManager.camera,
             this.sceneManager.renderer
           );
-
           this.uiManager.showNotification('Reporte PDF generado exitosamente', 'success');
         } catch (error) {
           console.error('Error generando PDF:', error);
@@ -237,7 +216,6 @@ class App {
   }
 }
 
-// Iniciar la aplicacion cuando el DOM este listo
 document.addEventListener('DOMContentLoaded', () => {
   new App();
 });

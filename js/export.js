@@ -3,203 +3,167 @@ import { state, rhombiData } from './state.js';
 
 /**
  * Maneja la exportacion del modelo a formato OBJ
+ * Usa array de líneas + join() en lugar de concatenación para evitar O(n²) en modelos grandes.
  */
 export class OBJExporter {
-  /**
-   * Exporta el zonohedro a formato OBJ
-   */
   static exportToOBJ() {
-    // La validacion ahora se hace en main.js antes de llamar a este metodo
-    
-    let objContent = '# Zonohedro Polar (Zome) - ZValdivia Export\n';
-    objContent += `# Generated: ${new Date().toISOString()}\n`;
-    objContent += `# Parameters: Dmax=${state.Dmax}, N=${state.N}, Angle=${state.aDeg}deg\n`;
+    const lines = [];
+    lines.push('# Zonohedro Polar (Zome) - ZValdivia Export');
+    lines.push(`# Generated: ${new Date().toISOString()}`);
+    lines.push(`# Parameters: Dmax=${state.Dmax}, N=${state.N}, Angle=${state.aDeg}deg`);
     if (state.cutActive) {
-      objContent += `# Cut plane active at level K=${state.cutLevel}\n`;
+      lines.push(`# Cut plane active at level K=${state.cutLevel}`);
     }
-    objContent += `# Total faces: ${rhombiData.reduce((sum, level) => sum + level.rhombi.length, 0)}\n\n`;
+    lines.push(`# Total faces: ${rhombiData.reduce((sum, level) => sum + level.rhombi.length, 0)}`);
+    lines.push('');
 
-    let vertexOffset = 1; // OBJ usa indices basados en 1
+    let vertexOffset = 1;
 
     for (const levelData of rhombiData) {
-      objContent += `# Level ${levelData.level} - ${levelData.name}\n`;
-      objContent += `# Faces in this level: ${levelData.rhombi.length}\n`;
-      objContent += `o ${levelData.name}\n`;
-      objContent += `g ${levelData.name}\n\n`;
+      lines.push(`# Level ${levelData.level} - ${levelData.name}`);
+      lines.push(`# Faces in this level: ${levelData.rhombi.length}`);
+      lines.push(`o ${levelData.name}`);
+      lines.push(`g ${levelData.name}`);
+      lines.push('');
 
       const levelVertices = [];
       const levelNormals = [];
 
-      // Recolectar todos los vertices
       for (const face of levelData.rhombi) {
         for (const v of face.vertices) {
           levelVertices.push(v);
         }
       }
 
-      // Escribir vertices
-      objContent += `# Vertices for ${levelData.name}\n`;
+      lines.push(`# Vertices for ${levelData.name}`);
       for (const v of levelVertices) {
-        objContent += `v ${v.x.toFixed(6)} ${v.y.toFixed(6)} ${v.z.toFixed(6)}\n`;
+        lines.push(`v ${v.x.toFixed(6)} ${v.y.toFixed(6)} ${v.z.toFixed(6)}`);
       }
-      objContent += '\n';
+      lines.push('');
 
-      // Calcular normales para cada cara
-      objContent += `# Normals for ${levelData.name}\n`;
+      lines.push(`# Normals for ${levelData.name}`);
+      const _e1 = new THREE.Vector3();
+      const _e2 = new THREE.Vector3();
+      const _n  = new THREE.Vector3();
       for (const face of levelData.rhombi) {
         const v0 = face.vertices[0];
         const v1 = face.vertices[1];
         const v2 = face.vertices[2];
 
-        // Calcular normal usando los primeros 3 vertices
-        const edge1 = new THREE.Vector3().subVectors(v1, v0);
-        const edge2 = new THREE.Vector3().subVectors(v2, v0);
-        const normal = new THREE.Vector3().crossVectors(edge1, edge2).normalize();
+        _e1.subVectors(v1, v0);
+        _e2.subVectors(v2, v0);
+        _n.crossVectors(_e1, _e2).normalize();
 
-        // Una normal por cara, repetida para cada vertice
         const vertexCount = face.isTriangle ? 3 : 4;
         for (let i = 0; i < vertexCount; i++) {
-          levelNormals.push(normal);
+          levelNormals.push(_n.clone());
         }
       }
 
-      // Escribir normales
       for (const n of levelNormals) {
-        objContent += `vn ${n.x.toFixed(6)} ${n.y.toFixed(6)} ${n.z.toFixed(6)}\n`;
+        lines.push(`vn ${n.x.toFixed(6)} ${n.y.toFixed(6)} ${n.z.toFixed(6)}`);
       }
-      objContent += '\n';
+      lines.push('');
 
-      // Escribir caras (triangulos o quads segun corresponda)
-      objContent += `# Faces for ${levelData.name}\n`;
+      lines.push(`# Faces for ${levelData.name}`);
       let currentVertex = vertexOffset;
-      
+
       for (const face of levelData.rhombi) {
         if (face.isTriangle) {
-          // Triangulo: 3 vertices
           const v1 = currentVertex;
           const v2 = currentVertex + 1;
           const v3 = currentVertex + 2;
-          objContent += `f ${v1}//${v1} ${v2}//${v2} ${v3}//${v3}\n`;
+          lines.push(`f ${v1}//${v1} ${v2}//${v2} ${v3}//${v3}`);
           currentVertex += 3;
         } else {
-          // Rombo (quad): 4 vertices
-          const v1 = currentVertex;     // Bottom
-          const v2 = currentVertex + 1; // Right
-          const v3 = currentVertex + 2; // Top
-          const v4 = currentVertex + 3; // Left
-          objContent += `f ${v1}//${v1} ${v2}//${v2} ${v3}//${v3} ${v4}//${v4}\n`;
+          const v1 = currentVertex;
+          const v2 = currentVertex + 1;
+          const v3 = currentVertex + 2;
+          const v4 = currentVertex + 3;
+          lines.push(`f ${v1}//${v1} ${v2}//${v2} ${v3}//${v3} ${v4}//${v4}`);
           currentVertex += 4;
         }
       }
 
-      objContent += '\n';
+      lines.push('');
       vertexOffset = currentVertex;
     }
 
-    // Si hay corte activo, agregar la tapa de cierre
     if (state.cutActive) {
-      objContent += `# Cut cap at level K=${state.cutLevel}\n`;
-      objContent += `o CutCap\n`;
-      objContent += `g CutCap\n\n`;
+      lines.push(`# Cut cap at level K=${state.cutLevel}`);
+      lines.push(`o CutCap`);
+      lines.push(`g CutCap`);
+      lines.push('');
 
       const { N, h1, cutLevel } = state;
       const z = cutLevel * h1;
-      
-      // Vertice central
-      objContent += `v 0.000000 0.000000 ${z.toFixed(6)}\n`;
-      
-      // Vertices del perimetro
+
+      lines.push(`v 0.000000 0.000000 ${z.toFixed(6)}`);
+
       const Rk = (state.Dmax / 2) * Math.sin((cutLevel * Math.PI) / N);
       const step = (2 * Math.PI) / N;
       const halfStep = Math.PI / N;
       const startAngle = -Math.PI / 2;
       const rotOffset = (cutLevel % 2 === 0) ? halfStep : 0;
-      
+
       for (let i = 0; i < N; i++) {
         const theta = startAngle + rotOffset + i * step;
-        const x = Rk * Math.cos(theta);
-        const y = Rk * Math.sin(theta);
-        objContent += `v ${x.toFixed(6)} ${y.toFixed(6)} ${z.toFixed(6)}\n`;
+        lines.push(`v ${(Rk * Math.cos(theta)).toFixed(6)} ${(Rk * Math.sin(theta)).toFixed(6)} ${z.toFixed(6)}`);
       }
-      objContent += '\n';
+      lines.push('');
 
-      // Normales (hacia abajo)
       const capVertexCount = N + 1;
-      for (let i = 0; i < capVertexCount * N; i++) {
-        objContent += `vn 0.000000 0.000000 -1.000000\n`;
+      for (let i = 0; i < capVertexCount; i++) {
+        lines.push(`vn 0.000000 0.000000 -1.000000`);
       }
-      objContent += '\n';
+      lines.push('');
 
-      // Caras triangulares
-      objContent += `# Cap triangular faces\n`;
+      lines.push(`# Cap triangular faces`);
       for (let i = 0; i < N; i++) {
         const vCenter = vertexOffset;
         const v1 = vertexOffset + 1 + i;
         const v2 = vertexOffset + 1 + ((i + 1) % N);
-        
-        const nCenter = vertexOffset;
-        const n1 = vertexOffset + 1 + i;
-        const n2 = vertexOffset + 1 + ((i + 1) % N);
-        
-        objContent += `f ${vCenter}//${nCenter} ${v1}//${n1} ${v2}//${n2}\n`;
+        lines.push(`f ${vCenter}//${vCenter} ${v1}//${v1} ${v2}//${v2}`);
       }
-      objContent += '\n';
+      lines.push('');
     }
 
-    // Agregar resumen al final
-    objContent += '# Export Summary\n';
-    objContent += `# Total Levels: ${rhombiData.length}\n`;
-    objContent += `# Total Faces: ${rhombiData.reduce((sum, level) => sum + level.rhombi.length, 0)}\n`;
+    lines.push('# Export Summary');
+    lines.push(`# Total Levels: ${rhombiData.length}`);
+    lines.push(`# Total Faces: ${rhombiData.reduce((sum, level) => sum + level.rhombi.length, 0)}`);
     if (state.cutActive) {
-      objContent += `# Cut plane: Active at K=${state.cutLevel}\n`;
-      objContent += `# Geometry is closed with triangular cap\n`;
+      lines.push(`# Cut plane: Active at K=${state.cutLevel}`);
+      lines.push(`# Geometry is closed with triangular cap`);
     }
 
-    // Descargar archivo
-    this.downloadOBJ(objContent);
+    this.downloadOBJ(lines.join('\n'));
   }
 
-  /**
-   * Descarga el archivo OBJ
-   * @param {string} content - Contenido del archivo OBJ
-   */
   static downloadOBJ(content) {
     const blob = new Blob([content], { type: 'application/octet-stream' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    
+
     let filename = `zome_D${state.Dmax.toFixed(1)}_N${state.N}_a${state.aDeg.toFixed(2)}`;
     if (state.cutActive) {
       filename += `_cut${state.cutLevel}`;
     }
     filename += '.obj';
-    
+
     a.download = filename;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-
-    console.log('OBJ exportado exitosamente');
-    console.log(`Total caras: ${rhombiData.reduce((sum, level) => sum + level.rhombi.length, 0)}`);
-    if (state.cutActive) {
-      console.log(`Corte activo en nivel K=${state.cutLevel}`);
-    }
   }
 }
 
 /**
  * Exporta SOLO la estructura de conectores (cilindros + vigas) a OBJ.
- *
- * Nota:
- * - Las vigas se exportan como QUADS (6 caras) usando metadata guardada en userData.
- * - Los cilindros se exportan tal como estan en THREE (triangulacion de la geometria).
+ * Usa array de líneas + join() en lugar de concatenación para mejor rendimiento.
  */
 export class StructureOBJExporter {
-  /**
-   * @param {THREE.Group} structureGroup
-   */
   static exportStructureToOBJ(structureGroup) {
     if (!structureGroup) throw new Error('No structure group');
     if (!structureGroup.children || structureGroup.children.length === 0) {
@@ -208,28 +172,28 @@ export class StructureOBJExporter {
 
     structureGroup.updateMatrixWorld(true);
 
-    let obj = '# ZValdivia - Connector Structure OBJ\n';
-    obj += `# Generated: ${new Date().toISOString()}\n`;
-    obj += `# Parameters: Dmax=${state.Dmax}, N=${state.N}, a=${state.aDeg}deg\n`;
-    if (state.cutActive) obj += `# Cut active at K=${state.cutLevel}\n`;
-    obj += '\n';
+    const lines = [];
+    lines.push('# ZValdivia - Connector Structure OBJ');
+    lines.push(`# Generated: ${new Date().toISOString()}`);
+    lines.push(`# Parameters: Dmax=${state.Dmax}, N=${state.N}, a=${state.aDeg}deg`);
+    if (state.cutActive) lines.push(`# Cut active at K=${state.cutLevel}`);
+    lines.push('');
 
-    let vOffset = 1; // OBJ 1-based
+    let vOffset = 1;
     let meshCounter = 0;
 
     structureGroup.traverse((child) => {
       if (!child || !child.isMesh) return;
       const mesh = child;
       const name = (mesh.name && mesh.name.trim()) ? mesh.name : `mesh_${meshCounter++}`;
-      obj += `o ${name}\n`;
-      obj += `g ${name}\n`;
+      lines.push(`o ${name}`);
+      lines.push(`g ${name}`);
 
-      // --- Vertices ---
       const verts = [];
       const ud = mesh && mesh.userData ? mesh.userData : null;
       const hasObjFaces = !!ud && Array.isArray(ud.objFaces) && Array.isArray(ud.objVertices);
+
       if (hasObjFaces) {
-        // Viga: 8 vertices definidos por el generador
         for (const v of mesh.userData.objVertices) {
           const p = v.clone().applyMatrix4(mesh.matrixWorld);
           verts.push(p);
@@ -244,51 +208,42 @@ export class StructureOBJExporter {
       }
 
       for (const p of verts) {
-        obj += `v ${p.x.toFixed(6)} ${p.y.toFixed(6)} ${p.z.toFixed(6)}\n`;
+        lines.push(`v ${p.x.toFixed(6)} ${p.y.toFixed(6)} ${p.z.toFixed(6)}`);
       }
-      obj += '\n';
+      lines.push('');
 
-      // --- Faces ---
       if (hasObjFaces) {
-        // Faces definidos por el generador: puede ser QUAD o N-gon
         const faces = (Array.isArray(mesh.userData.objFaces) && mesh.userData.objFaces.length)
           ? mesh.userData.objFaces
           : (Array.isArray(mesh.userData.objQuads) ? mesh.userData.objQuads : []);
         for (const face of faces) {
           if (!face || !face.length) continue;
-          const idxs = face.map((vi) => vOffset + vi);
-          obj += `f ${idxs.join(' ')}\n`;
+          lines.push(`f ${face.map((vi) => vOffset + vi).join(' ')}`);
         }
-        obj += '\n';
+        lines.push('');
         vOffset += verts.length;
         return;
       }
 
-
-      // Triangulacion (CylinderGeometry u otras)
       const geom = mesh.geometry;
       const idx = geom && geom.index ? geom.index : null;
       if (idx && idx.count >= 3) {
         for (let i = 0; i < idx.count; i += 3) {
-          const a = vOffset + idx.getX(i);
-          const b = vOffset + idx.getX(i + 1);
-          const c = vOffset + idx.getX(i + 2);
-          obj += `f ${a} ${b} ${c}\n`;
+          lines.push(`f ${vOffset + idx.getX(i)} ${vOffset + idx.getX(i + 1)} ${vOffset + idx.getX(i + 2)}`);
         }
-        obj += '\n';
+        lines.push('');
         vOffset += verts.length;
         return;
       }
 
-      // No indexed: asumir trios consecutivos
       for (let i = 0; i + 2 < verts.length; i += 3) {
-        obj += `f ${vOffset + i} ${vOffset + i + 1} ${vOffset + i + 2}\n`;
+        lines.push(`f ${vOffset + i} ${vOffset + i + 1} ${vOffset + i + 2}`);
       }
-      obj += '\n';
+      lines.push('');
       vOffset += verts.length;
     });
 
-    this._downloadOBJ(obj);
+    this._downloadOBJ(lines.join('\n'));
   }
 
   static _downloadOBJ(content) {

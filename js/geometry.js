@@ -45,9 +45,6 @@ export function createPolygons(polygonsGroup, matPolyLine, matPolyFill) {
   }
 
   const lineGeom = new THREE.BufferGeometry().setFromPoints(allLinePoints);
-  lineGeom.setAttribute('position', new THREE.Float32BufferAttribute(
-    lineGeom.attributes.position.array, 3
-  ));
   lineGeom.attributes.position.usage = THREE.StaticDrawUsage;
   polygonsGroup.add(new THREE.LineSegments(lineGeom, matPolyLine));
 

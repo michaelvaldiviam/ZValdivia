@@ -111,5 +111,5 @@ function hslToHex(h, s, l) {
     return hex.length === 1 ? '0' + hex : hex;
   };
 
-  return parseInt(`0x${toHex(r)}${toHex(g)}${toHex(b)}`);
+  return parseInt(`${toHex(r)}${toHex(g)}${toHex(b)}`, 16);
 }

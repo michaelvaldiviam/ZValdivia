@@ -24,6 +24,9 @@ export class SceneManager {
     this._overlayUpdater = null;
     this.lazyBuildQueue = [];
     this.lazyBuildInProgress = false;
+    // Render-on-demand: solo re-renderizar cuando hay cambios
+    this._needsRender = true;
+    this._rafId = null;
     
     this.setupRenderer();
     this.setupScene();
@@ -73,7 +76,8 @@ export class SceneManager {
     grad.addColorStop(1, '#0a0a0d');
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, 512, 512);
-    this.scene.background = new THREE.CanvasTexture(c2);
+    this._bgTexture = new THREE.CanvasTexture(c2);
+    this.scene.background = this._bgTexture;
   }
 
   setupCamera() {
@@ -90,6 +94,9 @@ export class SceneManager {
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.06;
+    // Marcar escena como dirty cuando el usuario interactúa con la cámara
+    this.controls.addEventListener('change', () => { this._needsRender = true; });
+    this.controls.addEventListener('start', () => { this._needsRender = true; });
   }
 
   setupLights() {
@@ -284,6 +291,7 @@ export class SceneManager {
       }
       
       this.isRebuilding = false;
+      this._needsRender = true;
       
       // Si hubo otra solicitud mientras reconstruiamos, ejecutarla
       if (this.rebuildRequested) {
@@ -368,6 +376,7 @@ export class SceneManager {
     
     requestAnimationFrame(() => {
       buildTask();
+      this._needsRender = true;
       this.processLazyBuildQueue();
     });
   }
@@ -575,6 +584,7 @@ export class SceneManager {
     state.lastStructureWarnings = (genResult && genResult.warnings) ? genResult.warnings : [];
     // Respetar toggle visible
     this.structureGroup.visible = !!state.structureVisible;
+    this._needsRender = true;
   }
 
   /**
@@ -583,6 +593,7 @@ export class SceneManager {
   setStructureVisible(visible) {
     state.structureVisible = !!visible;
     this.structureGroup.visible = !!visible;
+    this._needsRender = true;
   }
 
   /**
@@ -638,6 +649,7 @@ export class SceneManager {
     }
 
     this._selectedConnectorMesh = mesh;
+    this._needsRender = true;
   }
 
 
@@ -683,6 +695,7 @@ export class SceneManager {
     }
 
     this._selectedBeamMesh = mesh;
+    this._needsRender = true;
   }
 
   _kVisible(kOriginal) {
@@ -875,7 +888,6 @@ export class SceneManager {
     
     let centerZ;
     if (cutActive) {
-      // Centrar en la porcion visible del objeto cortado
       const visibleHeight = Htotal - (cutLevel * h1);
       centerZ = visibleHeight / 2;
     } else {
@@ -889,6 +901,7 @@ export class SceneManager {
       centerZ + Dmax * 0.6
     );
     this.controls.update();
+    this._needsRender = true;
   }
 
   resetCamera() {
@@ -900,20 +913,36 @@ export class SceneManager {
     this.camera.aspect = window.innerWidth / window.innerHeight;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(window.innerWidth, window.innerHeight);
+    this._needsRender = true;
+  }
+
+  /**
+   * Marca la escena como "sucia" para que se renderice en el próximo frame.
+   * Llamar cada vez que cambie geometría, estado visual o cámara.
+   */
+  markDirty() {
+    this._needsRender = true;
   }
 
   render() {
-    // Rotacion automatica en el eje Z (antihorario)
+    this._rafId = requestAnimationFrame(() => this.render());
+
+    // Rotación automática siempre marca dirty
     if (state.isRotating) {
       this.mainGroup.rotation.z += state.rotationSpeed * 0.01;
+      this._needsRender = true;
     }
 
-    this.controls.update();
-    // Actualizar overlays HTML (tooltip) antes de renderizar
-    if (this._overlayUpdater) {
-      try { this._overlayUpdater(); } catch (e) {}
+    // controls.update() devuelve true si la cámara se movió (damping en curso)
+    const cameraChanged = this.controls.update();
+    if (cameraChanged) this._needsRender = true;
+
+    if (this._needsRender) {
+      if (this._overlayUpdater) {
+        try { this._overlayUpdater(); } catch (e) {}
+      }
+      this.renderer.render(this.scene, this.camera);
+      this._needsRender = false;
     }
-    this.renderer.render(this.scene, this.camera);
-    requestAnimationFrame(() => this.render());
   }
 }
