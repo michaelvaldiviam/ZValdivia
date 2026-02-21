@@ -19,6 +19,40 @@ export const state = {
   structureVisible: true,
   structureParams: null, // {cylDiameterMm,cylDepthMm,beamWidthMm,beamHeightMm}
 
+  // Overrides por nivel para conectores cilindricos.
+  // Key: kOriginal (0..N). Value: { cylDiameterMm:number, cylDepthMm:number }
+  // Se usa para edicion interactiva por nivel/polo.
+  structureConnectorOverrides: {},
+
+  // Overrides por nivel SOLO para conectores de interseccion (diagonales en rombos).
+  // Key: kOriginal del rombo (anillo central kFace). Value: { cylDiameterMm:number, cylDepthMm:number, offsetMm?:number }
+  structureIntersectionConnectorOverrides: {},
+
+  // Overrides por nivel para vigas (perfil BxH).
+  // Key: kOriginal del nivel de la viga (usamos max(kA,kB)).
+  // Value: { beamWidthMm:number, beamHeightMm:number }
+  // Se usa para edicion interactiva por nivel.
+  structureBeamOverrides: {},
+
+  // Vigas extra (aristas/diagonales) definidas por el usuario.
+  // Cada item: { a:{k:number,i:number}, b:{k:number,i:number}, kind?:string, scope?:string }
+  // - k e i son coordenadas del anillo original (kOriginal).
+  // - kind es informativo (ej: 'diagH' | 'diagV').
+  structureExtraBeams: [],
+
+  // Intersecciones habilitadas por rombo.
+  // Key: `${kFace}:${iFace}` (anillo central del rombo, indice i del rombo)
+  // Value: true
+  // IMPORTANTE: solo se marca cuando el usuario crea la SEGUNDA diagonal (la que completa el cruce)
+  // para ese rombo.
+  structureIntersectionFaces: {},
+
+  // Vigas eliminadas por el usuario.
+  // Guardamos edgeKeys deterministicas: "<aKey>|<bKey>" (ordenadas)
+  // para poder excluirlas de la generacion, reportes PDF y conectividad.
+  structureDeletedBeams: [],
+
+
 };
 
 export let rhombiData = [];

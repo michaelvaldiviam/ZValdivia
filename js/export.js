@@ -226,7 +226,8 @@ export class StructureOBJExporter {
 
       // --- Vertices ---
       const verts = [];
-      const hasObjFaces = Array.isArray(mesh.userData?.objFaces) && Array.isArray(mesh.userData?.objVertices);
+      const ud = mesh && mesh.userData ? mesh.userData : null;
+      const hasObjFaces = !!ud && Array.isArray(ud.objFaces) && Array.isArray(ud.objVertices);
       if (hasObjFaces) {
         // Viga: 8 vertices definidos por el generador
         for (const v of mesh.userData.objVertices) {
@@ -234,7 +235,7 @@ export class StructureOBJExporter {
           verts.push(p);
         }
       } else {
-        const pos = mesh.geometry?.attributes?.position;
+        const pos = (mesh && mesh.geometry && mesh.geometry.attributes) ? mesh.geometry.attributes.position : null;
         if (!pos) return;
         for (let i = 0; i < pos.count; i++) {
           const p = new THREE.Vector3().fromBufferAttribute(pos, i).applyMatrix4(mesh.matrixWorld);
@@ -266,7 +267,7 @@ export class StructureOBJExporter {
 
       // Triangulacion (CylinderGeometry u otras)
       const geom = mesh.geometry;
-      const idx = geom?.index;
+      const idx = geom && geom.index ? geom.index : null;
       if (idx && idx.count >= 3) {
         for (let i = 0; i < idx.count; i += 3) {
           const a = vOffset + idx.getX(i);

@@ -36,7 +36,17 @@ export class StructureGenerator {
   clear() {
     while (this.group.children.length) {
       const ch = this.group.children[0];
-      if (ch.geometry) ch.geometry.dispose();
+      // Algunos conectores comparten geometria (cache). No debemos dispose()
+
+      // una geometria compartida, porque deja a otros meshes apuntando a un
+
+      // buffer liberado y la estructura puede \"desaparecer\" al mover la camara.
+
+      if (ch.geometry && !(ch.geometry.userData && ch.geometry.userData._zvCachedGeom)) {
+
+        ch.geometry.dispose();
+
+      }
       if (ch.material && ch.material.dispose) ch.material.dispose();
       this.group.remove(ch);
     }
@@ -53,20 +63,275 @@ export class StructureGenerator {
   generate(params) {
     const { N, cutActive, cutLevel } = state;
 
-    const cylDiameter = (Number(params.cylDiameterMm) || 1) / 1000;
-    const cylDepth = (Number(params.cylDepthMm) || 1) / 1000;
+    const warnings = [];
+
+    const baseCylDiameterMm = Number(params.cylDiameterMm) || 1;
+    const baseCylDepthMm = Number(params.cylDepthMm) || 1;
+    const baseCylDiameter = baseCylDiameterMm / 1000;
+    const baseCylDepth = baseCylDepthMm / 1000;
     // Compatibilidad: antes se llamaba beamThicknessMm
     const beamHeight = (Number(params.beamHeightMm ?? params.beamThicknessMm) || 1) / 1000;
     const beamWidth = (Number(params.beamWidthMm) || 1) / 1000;
 
-    const cylRadius = Math.max(0.0005, cylDiameter / 2);
     const startKNode = cutActive ? cutLevel : 0;
+
+    const overrides = (state.structureConnectorOverrides && typeof state.structureConnectorOverrides === 'object')
+      ? state.structureConnectorOverrides
+      : {};
+
+    const overridesIntersection = (state.structureIntersectionConnectorOverrides && typeof state.structureIntersectionConnectorOverrides === 'object')
+      ? state.structureIntersectionConnectorOverrides
+      : {};
+
+  const beamOverrides = (state.structureBeamOverrides && typeof state.structureBeamOverrides === 'object')
+    ? state.structureBeamOverrides
+    : {};
+
+    const clampMm = (v, fallback) => {
+      const n = Number(v);
+      if (!isFinite(n) || n <= 0) return fallback;
+      return n;
+    };
+
+    /**
+     * Parametrizacion del conector por nivel.
+     * Incluye offsetMm: traslado adicional a lo largo de la directriz (hacia el interior).
+     *
+     * @param {number} kOriginal
+     * @returns {{diameterMm:number, depthMm:number, offsetMm:number, radius:number, depth:number, offset:number}}
+     */
+    const cylForK = (kOriginal, isIntersection = false) => {
+      const src = isIntersection ? overridesIntersection : overrides;
+      const ov = src[String(kOriginal)] || src[kOriginal];
+      const dMm = ov && ov.cylDiameterMm != null ? clampMm(ov.cylDiameterMm, baseCylDiameterMm) : baseCylDiameterMm;
+      const pMm = ov && ov.cylDepthMm != null ? clampMm(ov.cylDepthMm, baseCylDepthMm) : baseCylDepthMm;
+      // offset puede ser 0 (permitido)
+      const offMm = (ov && ov.offsetMm != null && isFinite(Number(ov.offsetMm))) ? Math.max(0, Number(ov.offsetMm)) : 0;
+      const d = dMm / 1000;
+      const p = pMm / 1000;
+      const off = offMm / 1000;
+      const r = Math.max(0.0005, d / 2);
+      return { diameterMm: dMm, depthMm: pMm, offsetMm: offMm, radius: r, depth: p, offset: off };
+    };
+
+    /**
+     * Parametrizacion de la viga por nivel (kOriginal del nivel de viga).
+     * @param {number} kLevelOriginal
+     * @returns {{width:number,height:number,widthMm:number,heightMm:number}}
+     */
+    const beamForK = (kLevelOriginal) => {
+      const ov = beamOverrides[String(kLevelOriginal)] || beamOverrides[kLevelOriginal];
+      const wMm = ov && ov.beamWidthMm != null ? clampMm(ov.beamWidthMm, Number(params.beamWidthMm) || 1) : (Number(params.beamWidthMm) || 1);
+      const hMm = ov && ov.beamHeightMm != null ? clampMm(ov.beamHeightMm, Number(params.beamHeightMm ?? params.beamThicknessMm) || 1) : (Number(params.beamHeightMm ?? params.beamThicknessMm) || 1);
+      return {
+        widthMm: wMm,
+        heightMm: hMm,
+        width: wMm / 1000,
+        height: hMm / 1000,
+      };
+    };
+
+
+    // Cache de geometria por (radio, profundidad)
+    const cylGeomCache = new Map();
+    const getCylGeom = (radius, depth, seg = 20) => {
+      const key = `${radius.toFixed(6)}_${depth.toFixed(6)}_${seg}`;
+      const cached = cylGeomCache.get(key);
+      if (cached) return cached;
+      const g = new THREE.CylinderGeometry(radius, radius, depth, seg, 1, false);
+      // Marca: geometria compartida (cache). clear() NO debe dispose() esto.
+      g.userData = g.userData || {};
+      g.userData._zvCachedGeom = true;
+      cylGeomCache.set(key, g);
+      return g;
+    };
 
     // 1) Construir caras visibles (triangulos/quads) en coordenadas del mundo (sin aplicar shift del mainGroup)
     const faces = this._buildVisibleFaces();
 
     // 2) Calcular normales inward por cara y acumular incidencia por vertice
     const { vertexMap, edgeMap } = this._buildAdjacencyFromFaces(faces);
+
+    // 2.05) Vigas eliminadas por el usuario (se excluyen de edgeMap)
+    // Guardamos las eliminaciones como edgeKeys deterministicas: "<aKey>|<bKey>" (ordenadas)
+    const deletedEdges = Array.isArray(state.structureDeletedBeams) ? state.structureDeletedBeams : [];
+    const deletedSet = new Set(deletedEdges.filter(Boolean));
+
+    // 2.1) Aristas/vigas extra definidas por el usuario (diagonales, etc.)
+    // Se agregan al edgeMap para que usen la MISMA logica de bisel/recorte.
+    const extra = Array.isArray(state.structureExtraBeams) ? state.structureExtraBeams : [];
+    if (extra.length) {
+      const edgeKey = (aKey, bKey) => (aKey < bKey ? `${aKey}|${bKey}` : `${bKey}|${aKey}`);
+      for (const it of extra) {
+        if (!it || !it.a || !it.b) continue;
+        const ka = Number(it.a.k);
+        const ia = Number(it.a.i);
+        const kb = Number(it.b.k);
+        const ib = Number(it.b.i);
+        if (!isFinite(ka) || !isFinite(kb) || !isFinite(ia) || !isFinite(ib)) continue;
+
+        // Si hay corte, ignorar aristas con extremos bajo el corte
+        if (state.cutActive && (ka < state.cutLevel || kb < state.cutLevel)) continue;
+
+        const aKey = this._keyForVertex(ka, ia);
+        const bKey = this._keyForVertex(kb, ib);
+        if (aKey === bKey) continue;
+        const ek = edgeKey(aKey, bKey);
+        if (deletedSet.has(ek)) continue;
+        if (!edgeMap.has(ek)) {
+          edgeMap.set(ek, {
+            aKey,
+            bKey,
+            kind: it.kind || 'extra',
+          });
+        }
+      }
+    }
+
+
+    // 2.2) Si existen diagonales en AMBOS sentidos dentro del MISMO rombo (quad),
+    // y el usuario habilito la interseccion para ese rombo (al crear la 2da diagonal),
+    // generar un conector nuevo en la interseccion y partir ambas diagonales en 2 tramos.
+    // Esto evita el cruce de vigas y agrega conectividad real.
+    const intersectionFaces = state.structureIntersectionFaces || {};
+    if (extra.length) {
+      const extraSet = new Set();
+      const edgeKey = (aKey, bKey) => (aKey < bKey ? `${aKey}|${bKey}` : `${bKey}|${aKey}`);
+      for (const it of extra) {
+        if (!it || !it.a || !it.b) continue;
+        const ka = Number(it.a.k), ia = Number(it.a.i), kb = Number(it.b.k), ib = Number(it.b.i);
+        if (!isFinite(ka) || !isFinite(kb) || !isFinite(ia) || !isFinite(ib)) continue;
+        // Guardar solo diagonales (para no interferir con futuras extensiones)
+        const kind = it.kind || 'extra';
+        if (kind !== 'diagH' && kind !== 'diagV') continue;
+        const aKey = this._keyForVertex(ka, ia);
+        const bKey = this._keyForVertex(kb, ib);
+        if (aKey === bKey) continue;
+        extraSet.add(edgeKey(aKey, bKey) + `|${kind}`);
+      }
+
+      const { cutActive, cutLevel, h1, Htotal } = state;
+      const z0 = cutActive ? cutLevel * h1 : 0;
+      const globalCenter = new THREE.Vector3(0, 0, z0 + (Htotal - z0) * 0.5);
+
+      const ensureVertex = (key, data) => {
+        if (!vertexMap.has(key)) vertexMap.set(key, data);
+        return vertexMap.get(key);
+      };
+
+      const hasDiag = (aKey, bKey, kind) => extraSet.has(edgeKey(aKey, bKey) + `|${kind}`);
+
+      // Recorremos SOLO quads visibles (rombos). Ignorar triangulos del corte.
+      for (let fi = 0; fi < faces.length; fi++) {
+        const face = faces[fi];
+        if (!Array.isArray(face) || face.length !== 4) continue;
+
+        const vB = face[0], vR = face[1], vT = face[2], vL = face[3];
+        if (!vB || !vR || !vT || !vL) continue;
+
+        const bKey = this._keyForVertex(vB.k, vB.i);
+        const rKey = this._keyForVertex(vR.k, vR.i);
+        const tKey = this._keyForVertex(vT.k, vT.i);
+        const lKey = this._keyForVertex(vL.k, vL.i);
+
+        // Diagonales "canonicas" del rombo segun la construccion de la cara
+        const hasH = hasDiag(lKey, rKey, 'diagH');
+        const hasV = hasDiag(bKey, tKey, 'diagV');
+
+        if (!(hasH && hasV)) continue;
+
+        // Solo crear conector central si este rombo fue marcado explicitamente
+        // cuando el usuario creo la SEGUNDA diagonal.
+        const kFace = Number(vR.k);
+        const iFace = Number(vB.i);
+        const faceId = `${kFace}:${iFace}`;
+        if (!intersectionFaces[faceId]) continue;
+
+        // Key unico para el conector de interseccion por rombo
+        const cKey = `X:${kFace}:${iFace}`;
+
+        // Posicion del centro: interseccion de diagonales => promedio de puntos medios
+        const vLdata = vertexMap.get(lKey);
+        const vRdata = vertexMap.get(rKey);
+        const vBdata = vertexMap.get(bKey);
+        const vTdata = vertexMap.get(tKey);
+        const vLpos = (vLdata && vLdata.pos) ? vLdata.pos : this._posForVertex(vL.k, vL.i);
+        const vRpos = (vRdata && vRdata.pos) ? vRdata.pos : this._posForVertex(vR.k, vR.i);
+        const vBpos = (vBdata && vBdata.pos) ? vBdata.pos : this._posForVertex(vB.k, vB.i);
+        const vTpos = (vTdata && vTdata.pos) ? vTdata.pos : this._posForVertex(vT.k, vT.i);
+
+        const midLR = new THREE.Vector3().addVectors(vLpos, vRpos).multiplyScalar(0.5);
+        const midBT = new THREE.Vector3().addVectors(vBpos, vTpos).multiplyScalar(0.5);
+        const cPos = new THREE.Vector3().addVectors(midLR, midBT).multiplyScalar(0.5);
+
+        // Normal inward del rombo para orientar la directriz del conector nuevo
+        const e1 = new THREE.Vector3().subVectors(vRpos, vBpos);
+        const e2 = new THREE.Vector3().subVectors(vTpos, vBpos);
+        let n = new THREE.Vector3().crossVectors(e1, e2);
+        if (n.lengthSq() < 1e-12) {
+          // fallback: usa otra combinacion
+          const e3 = new THREE.Vector3().subVectors(vLpos, vBpos);
+          n = new THREE.Vector3().crossVectors(e2, e3);
+        }
+        n.normalize();
+        // Orientar hacia adentro segun el centro global
+        const faceCenter = new THREE.Vector3().addVectors(vLpos, vRpos).add(vBpos).add(vTpos).multiplyScalar(0.25);
+        const toCenter = new THREE.Vector3().subVectors(globalCenter, faceCenter);
+        if (n.dot(toCenter) < 0) n.multiplyScalar(-1);
+
+        ensureVertex(cKey, {
+          key: cKey,
+          k: kFace,
+          i: iFace,
+          pos: cPos,
+          faceNormalsInward: [n.clone()],
+          directrix: null,
+          isIntersection: true,
+          faceKey: { k: kFace, i: iFace },
+        });
+
+        // Partir diagonales en 2 tramos (4 vigas)
+        const addEdge = (aKey, bKey, kind) => {
+          const ek = edgeKey(aKey, bKey);
+          if (deletedSet.has(ek)) return;
+          if (!edgeMap.has(ek)) edgeMap.set(ek, { aKey, bKey, kind });
+        };
+
+        addEdge(lKey, cKey, 'diagH');
+        addEdge(cKey, rKey, 'diagH');
+        addEdge(bKey, cKey, 'diagV');
+        addEdge(cKey, tKey, 'diagV');
+
+        // Eliminar las diagonales originales para evitar duplicados (quedaran los tramos con conector central)
+        edgeMap.delete(edgeKey(lKey, rKey));
+        edgeMap.delete(edgeKey(bKey, tKey));
+      }
+    }
+
+    // 2.9) Aplicar eliminaciones al edgeMap final (cubre tambien aristas base y tramos por interseccion)
+    if (deletedSet.size) {
+      for (const ek of deletedSet) edgeMap.delete(ek);
+    }
+
+    // 2.95) Limpiar conectores de interseccion (X) sin vigas (por eliminaciones del usuario)
+    // Si un conector X no tiene ninguna arista incidente, NO debe generarse ni aparecer en reportes.
+    // Esto permite que, al eliminar todas las vigas del cruce, el nodo X desaparezca y tambien
+    // se elimine de la conectividad de los conectores cercanos.
+    {
+      const deg = new Map();
+      for (const e of edgeMap.values()) {
+        deg.set(e.aKey, (deg.get(e.aKey) || 0) + 1);
+        deg.set(e.bKey, (deg.get(e.bKey) || 0) + 1);
+      }
+      const keys = Array.from(vertexMap.keys());
+      for (const key of keys) {
+        const v = vertexMap.get(key);
+        if (v && v.isIntersection) {
+          const d = deg.get(key) || 0;
+          if (d === 0) vertexMap.delete(key);
+        }
+      }
+    }
 
     // 3) Directriz por vertice (suma de normales inward)
     for (const v of vertexMap.values()) {
@@ -77,7 +342,6 @@ export class StructureGenerator {
     }
 
     // 4) Cilindros por nodo visible
-    const cylGeom = new THREE.CylinderGeometry(cylRadius, cylRadius, cylDepth, 20, 1, false);
     // CylinderGeometry esta alineada a +Y por defecto
     const axisY = new THREE.Vector3(0, 1, 0);
 
@@ -87,12 +351,29 @@ export class StructureGenerator {
       // Si hay corte, no generamos nada bajo el nivel de corte.
       if (cutActive && k < cutLevel) continue;
 
+      const { radius: cylRadius, depth: cylDepth, offset: cylOffset, offsetMm } = cylForK(k, !!v.isIntersection);
+
       const dir = v.directrix.clone().normalize();
       const q = new THREE.Quaternion().setFromUnitVectors(axisY, dir);
-      const mesh = new THREE.Mesh(cylGeom, this.matConnector.clone());
-      mesh.position.copy(pos).addScaledVector(dir, cylDepth / 2);
+      const mesh = new THREE.Mesh(getCylGeom(cylRadius, cylDepth, 20), this.matConnector.clone());
+      // Posicion: por defecto la tapa exterior coincide con el nodo (pos).
+      // Con offset, desplazamos todo el cilindro hacia el interior a lo largo de la directriz.
+      // Importante: esto NO cambia el eje del cilindro, solo su ubicacion axial.
+      mesh.position.copy(pos).addScaledVector(dir, (cylDepth / 2) + cylOffset);
       mesh.quaternion.copy(q);
-      mesh.name = `connector_k${this._kVisible(k)}`;
+      mesh.name = v.isIntersection
+        ? `connectorX_k${this._kVisible(k)}_f${v.i}`
+        : `connector_k${this._kVisible(k)}_i${v.i}`;
+      mesh.userData.isConnector = true;
+      mesh.userData.connectorInfo = {
+        kOriginal: k,
+        kVisible: this._kVisible(k),
+        i: v.i,
+        id: v.isIntersection ? `X${this._kVisible(k)}-${v.i}` : `C${this._kVisible(k)}-${v.i}`,
+        diameterMm: Math.round(cylRadius * 2 * 1000),
+        depthMm: Math.round(cylDepth * 1000),
+        offsetMm: Math.round(offsetMm),
+      };
       // OBJ faces (caps + sides) with outward normals
       const cdata = this._buildCylinderObjData(cylRadius, cylDepth, 20);
       mesh.userData.objVertices = cdata.objVertices;
@@ -120,11 +401,32 @@ export class StructureGenerator {
       // Recorte para que la viga tope con la superficie exterior del cilindro en cada nodo.
       // Distancia desde el nodo, a lo largo de la arista, hasta interceptar el cilindro:
       // s = R / |e_perp|, donde e_perp es la componente de la arista perpendicular al eje del cilindro (directriz).
-      const trimA = this._trimToCylinderSurface(dir, a.directrix, cylRadius, len);
-      const trimB = this._trimToCylinderSurface(dir, b.directrix, cylRadius, len);
+      const cylA = cylForK(a.k, !!a.isIntersection);
+      const cylB = cylForK(b.k, !!b.isIntersection);
+      const trimA = this._trimToCylinderSurface(dir, a.directrix, cylA.radius, len);
+      const trimB = this._trimToCylinderSurface(dir, b.directrix, cylB.radius, len);
       const pA2 = pA.clone().addScaledVector(dir, trimA);
       const pB2 = pB.clone().addScaledVector(dir, -trimB);
-      if (pA2.distanceTo(pB2) < Math.max(beamWidth, beamHeight) * 0.5) continue;
+
+      // Dimensiones por nivel (edicion interactiva): usar kLevelOriginal = max(kA,kB)
+      const kLevelOriginal = Math.max(a.k, b.k);
+      const beamDims = beamForK(kLevelOriginal);
+      const beamWidthLocal = beamDims.width;
+      const beamHeightLocal = beamDims.height;
+
+      const effLen = pA2.distanceTo(pB2);
+      const minLen = Math.max(beamWidthLocal, beamHeightLocal) * 0.5;
+      if (effLen < minLen) {
+        warnings.push({
+          type: 'BEAM_TOO_SHORT',
+          a: { k: a.k, i: a.i },
+          b: { k: b.k, i: b.i },
+          lenMm: Math.round(effLen * 1000),
+          minMm: Math.round(minLen * 1000),
+        });
+        continue;
+      }
+
 
       // Bisel segun directrices de cada extremo
       const geom = this._createBeveledBeamGeometry({
@@ -137,9 +439,10 @@ export class StructureGenerator {
         originB: pB,
         axisA: a.directrix,
         axisB: b.directrix,
-        cylRadius: cylRadius,
-        width: beamWidth,
-        height: beamHeight,
+        cylRadiusA: cylA.radius,
+        cylRadiusB: cylB.radius,
+        width: beamWidthLocal,
+        height: beamHeightLocal,
       });
       if (!geom) continue;
 
@@ -158,20 +461,26 @@ export class StructureGenerator {
       // Metadata util para reportes (PDF) y futuros exports
       const aName = `k${this._kVisible(a.k)}`;
       const bName = `k${this._kVisible(b.k)}`;
+      m.userData.isBeam = true;
       m.userData.beamInfo = {
         kVisible: this._kVisible(Math.max(a.k, b.k)),
-        a: { name: aName, k: a.k, pos: pA2.clone() },
-        b: { name: bName, k: b.k, pos: pB2.clone() },
+        // Keys deterministicas de vertices (incluye conectores centrales X:...)
+        aKey: e.aKey,
+        bKey: e.bKey,
+        a: { name: aName, k: a.k, i: a.i, pos: pA2.clone() },
+        b: { name: bName, k: b.k, i: b.i, pos: pB2.clone() },
         // Guardar directrices y direccion de arista para reportes (Ang(d))
         aDir: a.directrix.clone(),
         bDir: b.directrix.clone(),
         edgeDir: dir.clone(),
+        id: this._beamId(a, b),
         // Angulo entre arista y directriz en cada extremo (en grados)
         angAdeg: THREE.MathUtils.radToDeg(Math.acos(THREE.MathUtils.clamp(Math.abs(dir.clone().normalize().dot(a.directrix.clone().normalize())), -1, 1))),
         angBdeg: THREE.MathUtils.radToDeg(Math.acos(THREE.MathUtils.clamp(Math.abs(dir.clone().negate().normalize().dot(b.directrix.clone().normalize())), -1, 1))),
-        widthMm: Math.round(beamWidth * 1000),
-        heightMm: Math.round(beamHeight * 1000),
+        widthMm: Math.round(beamWidthLocal * 1000),
+        heightMm: Math.round(beamHeightLocal * 1000),
         faces: (geom.faces ? geom.faces : null),
+        kind: e.kind || 'edge',
       };
 
       // Nombre por nivel (usar el K mayor para aristas verticales)
@@ -179,12 +488,86 @@ export class StructureGenerator {
       m.name = `beam_k${this._kVisible(kLevel)}_${beamCounter++}`;
       this.group.add(m);
     }
+
+    // Ocultar conectores "huérfanos" (sin ninguna viga conectada).
+    // Esto es clave cuando el usuario elimina vigas de aristas para crear aperturas:
+    // los conectores que quedan sin conexiones deben desaparecer del 3D.
+    (function hideOrphanConnectors(self){
+      const incident = new Map();
+
+      // Contar incidencias reales desde las vigas existentes en la escena (fuente de verdad del 3D).
+      for (let idx = 0; idx < self.group.children.length; idx++) {
+        const obj = self.group.children[idx];
+        if (!obj || !obj.userData || !obj.userData.isBeam) continue;
+        const bi = obj.userData.beamInfo;
+        if (!bi || !bi.aKey || !bi.bKey) continue;
+        incident.set(bi.aKey, (incident.get(bi.aKey) || 0) + 1);
+        incident.set(bi.bKey, (incident.get(bi.bKey) || 0) + 1);
+      }
+
+      const N = state.N;
+
+      const keyForConnector = (ci) => {
+        if (!ci) return null;
+        // Conector de intersección (cruce de diagonales)
+        if (ci.id && String(ci.id).charAt(0) === 'X') {
+          return `X:${ci.kOriginal}:${ci.i}`;
+        }
+        // Polos (solo existen sin corte activo)
+        if (ci.kOriginal === 0) return 'pole_low';
+        if (ci.kOriginal === N) return 'pole_top';
+        return `k${ci.kOriginal}_i${ci.i}`;
+      };
+
+      for (let idx = 0; idx < self.group.children.length; idx++) {
+        const obj = self.group.children[idx];
+        if (!obj || !obj.userData || !obj.userData.isConnector) continue;
+
+        const ci = obj.userData.connectorInfo;
+        const key = keyForConnector(ci);
+        if (!key) continue;
+
+        const deg = incident.get(key) || 0;
+
+        // Mantener polos siempre visibles; el resto se oculta si deg == 0.
+        if (deg === 0) {
+          obj.visible = false;
+          if (ci) ci._hiddenOrphan = true;
+        } else {
+          obj.visible = true;
+          if (ci && ci._hiddenOrphan) delete ci._hiddenOrphan;
+        }
+      }
+    })(this);
+    // Permite a la UI mostrar alertas (por ejemplo, vigas demasiado cortas).
+    return { warnings };
   }
 
   _kVisible(kOriginal) {
     const { cutActive, cutLevel } = state;
     return cutActive ? Math.max(0, kOriginal - cutLevel) : kOriginal;
   }
+
+  _beamId(a, b) {
+    // ID deterministico para una viga, independiente del orden de extremos.
+    // Usa niveles visibles y el indice 'i' de cada conector en su anillo.
+    const ka = this._kVisible(a.k);
+    const kb = this._kVisible(b.k);
+
+    if (ka === kb) {
+      const i0 = Math.min(a.i, b.i);
+      const i1 = Math.max(a.i, b.i);
+      return `B${ka}-${kb}_${i0}-${i1}`;
+    }
+
+    // Ordenar por nivel visible (inferior -> superior)
+    const lo = (ka < kb) ? a : b;
+    const hi = (ka < kb) ? b : a;
+    const klo = this._kVisible(lo.k);
+    const khi = this._kVisible(hi.k);
+    return `B${klo}-${khi}_${lo.i}-${hi.i}`;
+  }
+
 
   _keyForVertex(k, i) {
     // Colapsar polos (radio = 0)
@@ -373,7 +756,7 @@ export class StructureGenerator {
     return { objVertices: verts, objFaces: faces };
   }
 
-  _createBeveledBeamGeometry({ pA, pB, edgeDir, originA, originB, axisA, axisB, width, height, cylRadius }) {
+  _createBeveledBeamGeometry({ pA, pB, edgeDir, originA, originB, axisA, axisB, width, height, cylRadiusA, cylRadiusB }) {
     const e = edgeDir.clone().normalize();
     const len = pA.distanceTo(pB);
     if (len < 1e-6) return null;
@@ -420,7 +803,8 @@ export class StructureGenerator {
     // ---- Planos de bisel: la testa debe ser PARALELA a la directriz (u pertenece al plano) ----
     // => normal n   u. Posicionamos el plano para que sea tangente al cilindro:
     //    n   (x - origin) = R
-    const R = (typeof cylRadius === 'number' && cylRadius > 0) ? cylRadius : 0;
+    const RA = (typeof cylRadiusA === 'number' && cylRadiusA > 0) ? cylRadiusA : 0;
+    const RB = (typeof cylRadiusB === 'number' && cylRadiusB > 0) ? cylRadiusB : 0;
 
     const dirFromA = new THREE.Vector3().subVectors(pB, pA).normalize(); // sale de A hacia B
     const dirFromB = new THREE.Vector3().subVectors(pA, pB).normalize(); // sale de B hacia A
@@ -440,8 +824,8 @@ export class StructureGenerator {
     nA.normalize();
     nB.normalize();
 
-    const planeA = { n: nA, origin: originA, d: R };
-    const planeB = { n: nB, origin: originB, d: R };
+    const planeA = { n: nA, origin: originA, d: RA };
+    const planeB = { n: nB, origin: originB, d: RB };
 
     // Interseccion robusta: para cada una de las 4 aristas longitudinales (Ai->Bi),
     // intersectar con el plano del extremo correspondiente.

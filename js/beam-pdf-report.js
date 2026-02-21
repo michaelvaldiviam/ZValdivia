@@ -14,7 +14,48 @@ import { getRingVertex } from './geometry.js';
  * - Graduacion desde el extremo izquierdo = 0 hacia la derecha, en mm sin decimales.
  */
 export class BeamPDFReporter {
-  static async generateBeamsReport(structureGroup, sceneManager = null) {
+  // Detecta si las keys (k#, X:#) que vienen en beamInfo ya están en "niveles visibles"
+  // (cuando hay corte activo algunas rutinas generan keys ya re-indexadas desde 0).
+  static _initKeySpace(structureGroup) {
+    this._keysAreVisible = null;
+    const cutActive = !!state.cutActive;
+    const cutLevel = Number.isFinite(state.cutLevel) ? state.cutLevel : 0;
+    if (!cutActive || !structureGroup || typeof structureGroup.traverse !== "function") {
+      this._keysAreVisible = false;
+      return;
+    }
+    let minK = Infinity;
+    let sawAny = false;
+    structureGroup.traverse((obj) => {
+      const info = (obj && obj.userData && obj.userData.beamInfo) ? obj.userData.beamInfo : null;
+      if (!info) return;
+      const keys = [info.aKey, info.bKey];
+      for (const key of keys) {
+        if (typeof key !== "string") continue;
+        let m = /^k(\d+)_i\d+$/i.exec(key);
+        if (m) { sawAny = true; minK = Math.min(minK, Number(m[1])); continue; }
+        m = /^X:(\d+):\d+$/i.exec(key);
+        if (m) { sawAny = true; minK = Math.min(minK, Number(m[1])); continue; }
+      }
+    });
+    if (!sawAny) { this._keysAreVisible = false; return; }
+    // Heurística:
+    // - Si con corte activo el mínimo k observado es 0 (o < cutLevel), las keys ya están en espacio visible.
+    // - Si el mínimo k observado es >= cutLevel, las keys parecen ser originales.
+    this._keysAreVisible = (minK <= 0 || minK < cutLevel);
+  }
+
+  static _kFromKeyToVisible(kFromKey) {
+    const cutActive = !!state.cutActive;
+    const cutLevel = Number.isFinite(state.cutLevel) ? state.cutLevel : 0;
+    if (!cutActive) return kFromKey;
+    const keysVisible = (this._keysAreVisible === true);
+    return keysVisible ? kFromKey : (kFromKey - cutLevel);
+  }
+
+static async generateBeamsReport(structureGroup, sceneManager = null) {
+    // Inicializa detección de keyspace (visible vs original) para mostrar conectividad coherente.
+    BeamPDFReporter._initKeySpace(structureGroup);
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
 
@@ -33,32 +74,175 @@ export class BeamPDFReporter {
       await this._addBeamPage(doc, beams[i], i + 1, sceneManager, beamCountMap);
     }
 
+    // Paginas adicionales para vigas extra (diagonales/aristas extra y tramos a conectores X)
+    const extraBeams = this._pickExtraBeams(structureGroup, beams);
+    for (let j = 0; j < extraBeams.length; j++) {
+      doc.addPage();
+      await this._addBeamPage(doc, extraBeams[j], beams.length + j + 1, sceneManager, beamCountMap);
+    }
+
     const filename = `Vigas_ZValdivia_N${state.N}_a${state.aDeg.toFixed(2)}.pdf`;
     doc.save(filename);
   }
 
   /**
    * Cuenta instancias reales de vigas presentes en la estructura visible.
-   * Retorna Map con key "kLo-kHi" -> count.
+   * Retorna Map con key "<kind>:<touchesX>:<kLo>-<kHi>:L<lemma(мм)>" -> count.
+   *
+   * Nota: deduplicamos por endpoints (aKey/bKey) porque, al generar diagonales e
+   * intersecciones, la app puede terminar con meshes distintos que representan
+   * la MISMA viga (mismos extremos) y eso inflaba el conteo y/o generaba páginas
+   * duplicadas en el PDF.
    */
   static _countBeamInstances(structureGroup) {
+    // Retorna Map<typeKey, count>
     const map = new Map();
     if (!structureGroup || typeof structureGroup.traverse !== 'function') return map;
 
+    // Dedup global por viga (endpoints+kind). Evita contar meshes duplicados.
+    const seenUnique = new Set();
+
     structureGroup.traverse((obj) => {
-      const info = obj?.userData?.beamInfo;
+      const info = (obj && obj.userData && obj.userData.beamInfo) ? obj.userData.beamInfo : null;
       if (!info) return;
-      const pair = BeamPDFReporter._normalizeConnPair(info);
-      if (!pair || !Number.isFinite(pair.kLo) || !Number.isFinite(pair.kHi)) return;
-      const key = `${pair.kLo}-${pair.kHi}`;
+
+      const uniqueKey = BeamPDFReporter._beamUniqueKey(info, obj);
+      if (!uniqueKey || seenUnique.has(uniqueKey)) return;
+      seenUnique.add(uniqueKey);
+
+      const key = BeamPDFReporter._beamCountKey(info, obj);
+      if (!key) return;
+
       map.set(key, (map.get(key) || 0) + 1);
     });
+
     return map;
   }
 
-  static _pickRepresentativeBeams(structureGroup) {
+  static _beamUniqueKey(info, obj) {
+    const kind = (info && info.kind) ? String(info.kind) : 'edge';
+    const aKey = (info && typeof info.aKey === 'string') ? info.aKey : '';
+    const bKey = (info && typeof info.bKey === 'string') ? info.bKey : '';
+    // Preferir endpoints: es lo único que define identidad de “la viga”
+    if (aKey && bKey) {
+      const A = aKey < bKey ? aKey : bKey;
+      const B = aKey < bKey ? bKey : aKey;
+      return `${kind}|${A}|${B}`;
+    }
+    // Fallback: id (si existe)
+    const id = info && info.id ? String(info.id) : '';
+    if (id) return `${kind}|id|${id}`;
+    // Último fallback: uuid del mesh
+    const uuid = obj && obj.uuid ? String(obj.uuid) : '';
+    return uuid ? `${kind}|uuid|${uuid}` : null;
+  }
+
+  static _beamTypeKey(info, mesh) {
+    const pair = BeamPDFReporter._normalizeConnPair(info);
+    if (!pair || !Number.isFinite(pair.kLo) || !Number.isFinite(pair.kHi)) return null;
+
+    const kind = (info && info.kind) ? String(info.kind) : 'edge';
+    const aKey = (info && typeof info.aKey === 'string') ? info.aKey : '';
+    const bKey = (info && typeof info.bKey === 'string') ? info.bKey : '';
+    const touchesX = (aKey.startsWith('X:') || bKey.startsWith('X:')) ? 1 : 0;
+
+    // IMPORTANTÍSIMO: con diagonales/intersecciones pueden existir tramos con el mismo
+    // (kLo-kHi) pero longitudes distintas (ej. k0<->k1 normal vs un tramo corto hacia X).
+    // Si solo usamos niveles, se mezclan y luego aparecen páginas “duplicadas” o conteos raros.
+    let lenMm = null;
+    if (mesh) {
+      const lenM = BeamPDFReporter._beamLengthWorld(mesh);
+      if (Number.isFinite(lenM)) lenMm = Math.round(lenM * 1000);
+    }
+    const L = (lenMm != null) ? `:L${lenMm}` : '';
+
+    return `${kind}:${touchesX}:${pair.kLo}-${pair.kHi}${L}`;
+  }
+
+  
+// -----------------------------
+// Helpers: niveles visibles + etiquetas de conectores
+// -----------------------------
+
+static _toVisibleK(kOriginal) {
+  return BeamPDFReporter._kFromKeyToVisible(kOriginal);
+}
+static _parseConnectorKey(key) {
+  if (typeof key !== 'string') return null;
+  if (key === 'pole_low') return { type: 'pole', pole: 'low', k: 0, i: null };
+  if (key === 'pole_top') return { type: 'pole', pole: 'top', k: state.N, i: null };
+
+  let m = /^k(\d+)_i(\d+)$/i.exec(key);
+  if (m) return { type: 'k', k: Number(m[1]), i: Number(m[2]) };
+
+  m = /^X:(\d+):(\d+)$/i.exec(key);
+  if (m) return { type: 'X', k: Number(m[1]), i: Number(m[2]) };
+
+  return null;
+}
+
+static _formatConnectorKeyVisible(key) {
+  const parsed = BeamPDFReporter._parseConnectorKey(key);
+  if (!parsed) return 'k?';
+  if (parsed.type === 'pole') {
+    // Etiqueta estable (no depende de corte). Mantener como en la app.
+    return (parsed.pole === 'low') ? 'pole_low' : 'pole_top';
+  }
+  const kVis = BeamPDFReporter._toVisibleK(parsed.k);
+  if (parsed.type === 'X') return `X:${kVis}:${parsed.i}`;
+  return `k${kVis}`;
+}
+
+static _endpointPairVisible(info) {
+  const aKey = (info && typeof info.aKey === 'string') ? info.aKey : '';
+  const bKey = (info && typeof info.bKey === 'string') ? info.bKey : '';
+  const aV = BeamPDFReporter._formatConnectorKeyVisible(aKey);
+  const bV = BeamPDFReporter._formatConnectorKeyVisible(bKey);
+  // Orden estable para deduplicación
+  return (aV <= bV) ? { a: aV, b: bV } : { a: bV, b: aV };
+}
+
+static _beamCountKey(info, mesh) {
+  // Key robusta para conteos y agrupaciones en PDF.
+  // - Para vigas base (kind=edge sin tocar X): agrupar por niveles visibles + longitud.
+  // - Para extras (diagonales / tramos hacia X / cualquier kind != edge): además incluir endpoints visibles
+  //   para separar casos “mismo tipo” pero conectores distintos (ej. aparece conector X nuevo).
+  const pair = BeamPDFReporter._normalizeConnPair(info);
+  if (!pair || !Number.isFinite(pair.kLo) || !Number.isFinite(pair.kHi)) return null;
+
+  const kind = (info && info.kind) ? String(info.kind) : 'edge';
+  const aKey = (info && typeof info.aKey === 'string') ? info.aKey : '';
+  const bKey = (info && typeof info.bKey === 'string') ? info.bKey : '';
+  const touchesX = (aKey.startsWith('X:') || bKey.startsWith('X:')) ? 1 : 0;
+
+  const kLoVis = BeamPDFReporter._toVisibleK(pair.kLo);
+  const kHiVis = BeamPDFReporter._toVisibleK(pair.kHi);
+
+  let lenMm = null;
+  if (mesh) {
+    const lenM = BeamPDFReporter._beamLengthWorld(mesh);
+    if (Number.isFinite(lenM)) lenMm = Math.round(lenM * 1000);
+  }
+  const L = (lenMm != null) ? `:L${lenMm}` : '';
+
+  const isExtra = (kind !== 'edge') || touchesX === 1;
+
+  if (!isExtra) {
+    return `${kind}:${touchesX}:${kLoVis}-${kHiVis}${L}`;
+  }
+
+  const ep = BeamPDFReporter._endpointPairVisible(info);
+  return `${kind}:${touchesX}:${kLoVis}-${kHiVis}${L}:${ep.a}<->${ep.b}`;
+}
+
+static _pickRepresentativeBeams(structureGroup) {
     const children = (structureGroup && structureGroup.children) ? structureGroup.children : [];
-    const beamMeshes = children.filter(o => o && typeof o.name === 'string' && o.name.startsWith('beam_k'));
+    const beamMeshes = children.filter(o => {
+      if (!o || typeof o.name !== 'string' || !o.name.startsWith('beam_k')) return false;
+      const kind = (o.userData && o.userData.beamInfo && o.userData.beamInfo.kind) ? o.userData.beamInfo.kind : 'edge';
+      // Representantes SOLO de vigas base (aristas originales). Extras/diagonales se reportan aparte.
+      return kind === 'edge';
+    });
 
     // Agrupar por kVisible y escoger la viga con mayor longitud (mejor para reporte)
     const byK = new Map();
@@ -73,7 +257,7 @@ export class BeamPDFReporter {
 
     return [...byK.entries()]
       .map(([k, v]) => {
-        const info = v.mesh?.userData?.beamInfo || {};
+        const info = (v && v.mesh && v.mesh.userData && v.mesh.userData.beamInfo) ? v.mesh.userData.beamInfo : {};
         const pair = this._normalizeConnPair(info);
         return { kVisible: k, mesh: v.mesh, _pair: pair };
       })
@@ -92,6 +276,74 @@ export class BeamPDFReporter {
       .map(({ kVisible, mesh }) => ({ kVisible, mesh }));
   }
 
+
+static _pickExtraBeams(structureGroup, alreadyPicked) {
+  const children = (structureGroup && structureGroup.children) ? structureGroup.children : [];
+  const pickedSet = new Set();
+  if (Array.isArray(alreadyPicked)) {
+    for (const it of alreadyPicked) {
+      const m = it && it.mesh;
+      const id = m && m.userData && m.userData.beamInfo ? m.userData.beamInfo.id : null;
+      if (id) pickedSet.add(id);
+    }
+  }
+
+  // Agrupar extras por “tipo” para evitar páginas repetidas.
+  // key = _beamTypeKey(kind,levels,longitud)
+  const byType = new Map();
+  for (const obj of children) {
+    if (!obj || !obj.userData || !obj.userData.beamInfo) continue;
+    if (!obj.userData.isBeam) continue;
+    const info = obj.userData.beamInfo;
+    const id = info.id || null;
+    if (id && pickedSet.has(id)) continue;
+
+    const kind = info.kind || 'edge';
+    const aKey = info.aKey || '';
+    const bKey = info.bKey || '';
+    const touchesX = (typeof aKey === 'string' && aKey.indexOf('X:') === 0) || (typeof bKey === 'string' && bKey.indexOf('X:') === 0);
+
+    // Considerar como "extra" todo lo que NO sea una arista base, o que toque un conector de interseccion.
+    if (kind !== 'edge' || touchesX) {
+      const typeKey = BeamPDFReporter._beamCountKey(info, obj);
+      if (!typeKey) continue;
+
+      // Elegimos un representante estable: el más largo (mejor vista en PDF)
+      const len = this._beamLengthWorld(obj);
+      const prev = byType.get(typeKey);
+      if (!prev || (Number.isFinite(len) && len > prev.len)) {
+        byType.set(typeKey, {
+          mesh: obj,
+          len,
+          kVisible: (Number.isFinite(info.kVisible) ? info.kVisible : this._parseK(obj.name)),
+          _typeKey: typeKey
+        });
+      }
+      if (id) pickedSet.add(id);
+    }
+  }
+
+  const extra = [...byType.values()].map(v => ({ mesh: v.mesh, kVisible: v.kVisible, _typeKey: v._typeKey }));
+
+  // Orden estable: primero por (kLo,kHi) y luego por longitud
+  extra.sort((A, B) => {
+    const ia = A && A.mesh && A.mesh.userData ? A.mesh.userData.beamInfo : null;
+    const ib = B && B.mesh && B.mesh.userData ? B.mesh.userData.beamInfo : null;
+    const pa = ia ? BeamPDFReporter._normalizeConnPair(ia) : null;
+    const pb = ib ? BeamPDFReporter._normalizeConnPair(ib) : null;
+    if (pa && pb) {
+      if (pa.kLo !== pb.kLo) return pa.kLo - pb.kLo;
+      if (pa.kHi !== pb.kHi) return pa.kHi - pb.kHi;
+    }
+    const la = BeamPDFReporter._beamLengthWorld(A.mesh);
+    const lb = BeamPDFReporter._beamLengthWorld(B.mesh);
+    if (Number.isFinite(la) && Number.isFinite(lb) && la !== lb) return la - lb;
+    return 0;
+  });
+
+  return extra;
+}
+
   static _parseK(name) {
     const m = /beam_k(\d+)_/i.exec(name);
     return m ? Number(m[1]) : NaN;
@@ -103,18 +355,41 @@ export class BeamPDFReporter {
     return m ? Number(m[1]) : NaN;
   }
 
+  // Parseo robusto desde keys internas (beamInfo.aKey/bKey)
+  // - k#_i# => k
+  // - pole_low / pole_top
+  // - X:k:i => k (nivel del rombo)
+  static _parseKFromKey(key) {
+    if (typeof key !== 'string') return NaN;
+    if (key === 'pole_low') return 0;
+    if (key === 'pole_top') return state.N;
+    let m = /^k(\d+)_i(\d+)$/i.exec(key);
+    if (m) return Number(m[1]);
+    m = /^X:(\d+):(\d+)$/i.exec(key);
+    if (m) return Number(m[1]);
+    return NaN;
+  }
+
   /**
    * Normaliza el par de conectores para que quede (kLo <-> kHi).
    * Retorna tambien que extremo (a/b) corresponde a cada lado.
    */
   static _normalizeConnPair(info) {
-    const aName = info?.a?.name;
-    const bName = info?.b?.name;
-    const kA = this._parseKFromConnName(aName);
-    const kB = this._parseKFromConnName(bName);
+    // Preferir claves internas (soportan polos y conectores X)
+    const aKey = info ? info.aKey : null;
+    const bKey = info ? info.bKey : null;
+    let kA = this._parseKFromKey(aKey);
+    let kB = this._parseKFromKey(bKey);
+
+    // Fallback: nombres legacy "k#"
     if (!Number.isFinite(kA) || !Number.isFinite(kB)) {
-      return null;
+      const aName = info && info.a ? info.a.name : null;
+      const bName = info && info.b ? info.b.name : null;
+      kA = this._parseKFromConnName(aName);
+      kB = this._parseKFromConnName(bName);
     }
+
+    if (!Number.isFinite(kA) || !Number.isFinite(kB)) return null;
     if (kA <= kB) {
       return { kLo: kA, kHi: kB, nameLo: `k${kA}`, nameHi: `k${kB}`, keyLo: 'a', keyHi: 'b' };
     }
@@ -127,7 +402,7 @@ export class BeamPDFReporter {
    * Mantiene base coherente (e y w se invierten juntos).
    */
   static _ensureBasisDirectionByLevels(basis, info, pair) {
-    if (!basis || !info?.a?.pos || !info?.b?.pos || !pair) return basis;
+    if (!basis || !info || !info.a || !info.b || !info.a.pos || !info.b.pos || !pair) return basis;
 
     const uA = info.a.pos.dot(basis.e);
     const uB = info.b.pos.dot(basis.e);
@@ -144,10 +419,10 @@ export class BeamPDFReporter {
   }
 
   static _beamLengthWorld(mesh) {
-    const info = mesh?.userData?.beamInfo;
-    if (info?.a?.pos && info?.b?.pos) return info.a.pos.distanceTo(info.b.pos);
+    const info = (mesh && mesh.userData && mesh.userData.beamInfo) ? mesh.userData.beamInfo : null;
+    if (info && info.a && info.b && info.a.pos && info.b.pos) return info.a.pos.distanceTo(info.b.pos);
     // Fallback: bbox
-    if (mesh?.geometry) {
+    if (mesh && mesh.geometry) {
       mesh.geometry.computeBoundingBox();
       const bb = mesh.geometry.boundingBox;
       if (bb) return bb.max.distanceTo(bb.min);
@@ -177,7 +452,8 @@ export class BeamPDFReporter {
       `Diametro del piso = ${floorDiameter.toFixed(3)} m`,
       `Altura total visible = ${visibleHeight.toFixed(3)} m`,
       `Angulo a = ${state.aDeg.toFixed(2)}°`,
-      state.cutActive ? `Corte activo: suelo en K(original)=${state.cutLevel} (vista: z=0)` : 'Corte inactivo',
+      // Mostrar solo niveles visibles (K). Con corte activo, el suelo visible se considera K=0.
+      state.cutActive ? 'Corte activo: suelo en K=0 (vista: z=0)' : 'Corte inactivo',
     ];
 
     let y = 55;
@@ -192,24 +468,6 @@ export class BeamPDFReporter {
       doc.text(t, 24, y);
       y += 7;
     });
-
-    // Cantidad de vigas por nivel (reglas del usuario)
-    // - En los polos siempre hay N vigas.
-    // - Si hay corte activo: el nivel del suelo visible tiene N vigas.
-    // - Los demas niveles visibles (entre extremos) tienen 2N vigas.
-    const countInfo = this._beamCountsByLevel();
-    y += 6;
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(13);
-    doc.text('Cantidad de vigas por nivel', 20, y);
-    y += 10;
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(12);
-    countInfo.lines.forEach(t => {
-      doc.text(t, 24, y);
-      y += 7;
-    });
-
     y += 10;
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(13);
@@ -265,7 +523,7 @@ export class BeamPDFReporter {
     doc.text('ZValdivia 3D', 210 - margin, y0, { align: 'right' });
 
     const mesh = item.mesh;
-    const info = mesh?.userData?.beamInfo || {};
+    const info = (mesh && mesh.userData && mesh.userData.beamInfo) ? mesh.userData.beamInfo : {};
 
     // Normalizar conectores para que el reporte sea consistente:
     // izquierda = nivel mas abajo (kLo), derecha = nivel mas arriba (kHi)
@@ -273,43 +531,58 @@ export class BeamPDFReporter {
 
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(14);
-    const Ncount = Number(state.N) || 0;
-    // Conteo de unidades por tipo de viga (regla del usuario):
-    // - En los polos siempre hay N vigas.
-    //   En el PDF estas aparecen como vigas que conectan el polo con el primer/ultimo nivel visible
-    //   (ej: k0<->k1 y k(kMax-1)<->kMax cuando NO hay corte).
-    // - Si hay corte activo: la viga del suelo visible es N (k0<->k0) y el polo superior es N.
-    // - El resto (entre niveles internos) es 2N.
-    // Cantidad real de instancias de esta viga en la estructura visible (por par de niveles).
-let unitsCount = 2 * Ncount;
-if (pair && Number.isFinite(pair.kLo) && Number.isFinite(pair.kHi) && beamCountMap instanceof Map) {
-  const key = `${pair.kLo}-${pair.kHi}`;
-  const real = beamCountMap.get(key);
-  if (Number.isFinite(real) && real > 0) unitsCount = real;
-} else if (pair && Number.isFinite(pair.kLo) && Number.isFinite(pair.kHi)) {
-  // Fallback (si no hay mapa): polos/suelo N, resto 2N.
-  const kMaxIndex = Number(state.N) || 0;
-  const touchesLowerPole = (!state.cutActive && pair.kLo === 0);
-  const touchesUpperPole = (pair.kHi === kMaxIndex);
-  const isFloorBeam = (state.cutActive && pair.kLo === 0 && pair.kHi === 0);
-  if (touchesLowerPole || touchesUpperPole || isFloorBeam) unitsCount = Ncount;
-}
-doc.text(`Viga k${item.kVisible} (${unitsCount} unidades)`, x0, y0);
+    // Cantidad REAL de instancias de este tipo de viga en la estructura visible.
+    // Importante:
+    // - Se deduplica por endpoints para evitar inflar conteos cuando existen meshes duplicados.
+    // - El tipo incluye la longitud (mm) para NO mezclar tramos cortos (ej. hacia X/intersección)
+    //   con la viga “larga” normal del mismo par de niveles.
+    let unitsCount = 1;
+    if (pair && Number.isFinite(pair.kLo) && Number.isFinite(pair.kHi) && beamCountMap instanceof Map) {
+      const key = BeamPDFReporter._beamCountKey(info, mesh);
+      const real = key ? beamCountMap.get(key) : null;
+      if (Number.isFinite(real) && real > 0) unitsCount = real;
+    }
 
-    // Conectividad (si hay datos validos: kLo <-> kHi)
-    const connA = pair ? pair.nameLo : (info?.a?.name || 'k?');
-    const connB = pair ? pair.nameHi : (info?.b?.name || 'k?');
+    doc.text(`Viga k${item.kVisible} (${unitsCount} unidades)`, x0, y0);
+    doc.setFontSize(11);
+
+    
+// Conectividad:
+// - Vigas base: mostrar solo niveles visibles (k# <-> k#).
+// - Vigas extra (diagonales / tramos hacia X): mostrar conectores completos (k#_i# / X:K:I) en niveles visibles.
+let connA = 'k?';
+let connB = 'k?';
+const kind = (info && info.kind) ? String(info.kind) : 'edge';
+const aKey = (info && typeof info.aKey === 'string') ? info.aKey : '';
+const bKey = (info && typeof info.bKey === 'string') ? info.bKey : '';
+const touchesX = (aKey.startsWith('X:') || bKey.startsWith('X:')) ? 1 : 0;
+const isExtra = (kind !== 'edge') || touchesX === 1;
+
+if (isExtra) {
+  connA = BeamPDFReporter._formatConnectorKeyVisible(aKey);
+  connB = BeamPDFReporter._formatConnectorKeyVisible(bKey);
+} else if (pair && Number.isFinite(pair.kLo) && Number.isFinite(pair.kHi)) {
+  const kLoVis = BeamPDFReporter._toVisibleK(pair.kLo);
+  const kHiVis = BeamPDFReporter._toVisibleK(pair.kHi);
+  connA = `k${kLoVis}`;
+  connB = `k${kHiVis}`;
+} else {
+  connA = (info && info.a && info.a.name) ? info.a.name : 'k?';
+  connB = (info && info.b && info.b.name) ? info.b.name : 'k?';
+}
+
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(10);
-    doc.text(`Conecta: ${connA} <-> ${connB}`, x0, y0 + 6);
+    // Etiqueta de conectividad (incluye IDs de conectores si existen)
+    doc.text(`Conecta: ${connA} <-> ${connB}`, x0, y0 + 12);
 
     // Dimensiones
     const widthMm = Number.isFinite(info.widthMm) ? info.widthMm : null;
     const heightMm = Number.isFinite(info.heightMm) ? info.heightMm : null;
     const lenMm = Math.round(this._beamLengthWorld(mesh) * 1000);
     const dimLine = `L = ${lenMm} mm${widthMm != null ? `, Ancho = ${widthMm} mm` : ''}${heightMm != null ? `, Alto = ${heightMm} mm` : ''}`;
-    doc.text(dimLine, x0, y0 + 12);
+    doc.text(dimLine, x0, y0 + 18);
 
     // Obtener vertices (world)
     const vertsW = this._getBeamVerticesWorld(mesh);
@@ -336,13 +609,28 @@ doc.text(`Viga k${item.kVisible} (${unitsCount} unidades)`, x0, y0);
 
     // Punto de referencia sobre la arista del zonohedro (cara exterior).
     // Normalmente es el punto medio entre conectores A/B.
-    const edgeMid = (info?.a?.pos && info?.b?.pos)
+    const edgeMid = (info && info.a && info.b && info.a.pos && info.b.pos)
       ? info.a.pos.clone().add(info.b.pos).multiplyScalar(0.5)
       : null;
 
-    // Etiquetas siempre: izquierda = nivel mas abajo, derecha = nivel mas arriba
-    const leftLabel = pair ? pair.nameLo : (info?.a?.name || 'k?');
-    const rightLabel = pair ? pair.nameHi : (info?.b?.name || 'k?');
+    // Etiquetas en los dibujos: DEBEN ser consistentes con la conectividad mostrada bajo el titulo.
+    // - Niveles visibles siempre.
+    // - Para vigas extra (diagonales / tramos hacia X): mostrar conectores completos (k#_i# / X:K:I) en niveles visibles.
+    const dispA = isExtra ? BeamPDFReporter._formatConnectorKeyVisible(aKey) : (pair && Number.isFinite(pair.kLo) ? `k${BeamPDFReporter._toVisibleK(pair.kLo)}` : connA);
+    const dispB = isExtra ? BeamPDFReporter._formatConnectorKeyVisible(bKey) : (pair && Number.isFinite(pair.kHi) ? `k${BeamPDFReporter._toVisibleK(pair.kHi)}` : connB);
+
+    // izquierda = extremo de menor nivel (kLo), derecha = mayor (kHi)
+    // Nota: para vigas base del zonohedro (kind='edge'), dispA/dispB YA están ordenados como (kLo)->(kHi).
+    // Para vigas extra (diagonales/tramos a X), mantenemos el orden real A/B para que el nombre del conector sea el correcto.
+    let leftLabel;
+    let rightLabel;
+    if (!isExtra && pair && Number.isFinite(pair.kLo) && Number.isFinite(pair.kHi) && pair.kLo !== pair.kHi) {
+      leftLabel = dispA;   // k menor (visible)
+      rightLabel = dispB;  // k mayor (visible)
+    } else {
+      leftLabel = pair ? (pair.keyLo === 'a' ? dispA : dispB) : dispA;
+      rightLabel = pair ? (pair.keyHi === 'a' ? dispA : dispB) : dispB;
+    }
 
     // Ang(d): angulo en cada extremo segun el conector que quede a la izquierda/derecha
     const aAng = Number.isFinite(info.angAdeg) ? info.angAdeg : null;
@@ -422,11 +710,13 @@ doc.text(`Viga k${item.kVisible} (${unitsCount} unidades)`, x0, y0);
   }
 
   static _getBeamVerticesWorld(mesh) {
-    const uv = mesh?.userData?.objVertices;
+    const uv = (mesh && mesh.userData) ? mesh.userData.objVertices : null;
     if (Array.isArray(uv) && uv.length === 8) return uv.map(v => v.clone());
 
     // Fallback: leer posiciones de BufferGeometry (8 vertices)
-    const pos = mesh?.geometry?.getAttribute?.('position');
+    const pos = (mesh && mesh.geometry && typeof mesh.geometry.getAttribute === 'function')
+      ? mesh.geometry.getAttribute('position')
+      : null;
     if (!pos || pos.count < 8) return null;
     const out = [];
     for (let i = 0; i < 8; i++) {
@@ -446,12 +736,12 @@ doc.text(`Viga k${item.kVisible} (${unitsCount} unidades)`, x0, y0);
     // ---------------------------------------------
 
     // Extremos de la arista del zonohedro (en mundo)
-    const A = (info?.a?.pos && info.a.pos.isVector3) ? info.a.pos.clone() : null;
-    const B = (info?.b?.pos && info.b.pos.isVector3) ? info.b.pos.clone() : null;
+    const A = (info && info.a && info.a.pos && info.a.pos.isVector3) ? info.a.pos.clone() : null;
+    const B = (info && info.b && info.b.pos && info.b.pos.isVector3) ? info.b.pos.clone() : null;
 
     // Eje largo (X)
     let e = null;
-    if (info?.edgeDir && info.edgeDir.isVector3) {
+    if (info && info.edgeDir && info.edgeDir.isVector3) {
       e = info.edgeDir.clone();
       if (e.lengthSq() < 1e-12) e = null;
     }
@@ -598,10 +888,10 @@ const facePts = faceIdx.map(i => vertsW[i]);
 
 
   static _orderEndpointsByE(info, eAxis) {
-    const aPos = info?.a?.pos;
-    const bPos = info?.b?.pos;
-    const aName = info?.a?.name || 'k?';
-    const bName = info?.b?.name || 'k?';
+    const aPos = (info && info.a) ? info.a.pos : null;
+    const bPos = (info && info.b) ? info.b.pos : null;
+    const aName = (info && info.a && info.a.name) ? info.a.name : 'k?';
+    const bName = (info && info.b && info.b.name) ? info.b.name : 'k?';
     if (!aPos || !bPos) return { leftName: aName, rightName: bName, leftKey: 'a', rightKey: 'b' };
 
     const d = bPos.clone().sub(aPos);
@@ -751,7 +1041,7 @@ static _edges() {
     //   e = largo (arista)
     //   w = ancho (en la cara que contiene la arista)
     //   t = alto  (normal de esa cara), orientada para que el interior quede con z < 0
-    let wPlan = (basis?.w ? basis.w.clone() : null);
+    let wPlan = (basis && basis.w) ? basis.w.clone() : null;
     if (!wPlan) {
       // Fallback extremadamente raro
       wPlan = new THREE.Vector3(0, 1, 0);
@@ -760,8 +1050,25 @@ static _edges() {
     }
     wPlan.normalize();
 
+     // Re-ortonormaliza base de planta (robusto): asegura w ⟂ e y t ⟂ {e,w}
+     wPlan.sub(e.clone().multiplyScalar(wPlan.dot(e)));
+     if (wPlan.lengthSq() < 1e-12) wPlan = new THREE.Vector3(1, 0, 0).cross(e);
+     wPlan.normalize();
+
+     // Eje de profundidad (alto) de planta: normal de la cara exterior (re-ortonormalizada)
+     let t = (basis && basis.t) ? basis.t.clone() : new THREE.Vector3().crossVectors(wPlan, e);
+     // Quitar componentes sobre e y wPlan
+     t.sub(e.clone().multiplyScalar(t.dot(e)));
+     t.sub(wPlan.clone().multiplyScalar(t.dot(wPlan)));
+     if (t.lengthSq() < 1e-12) t = new THREE.Vector3().crossVectors(wPlan, e);
+     t.normalize();
+
+     // Cierra la base: wPlan = t × e (evita drift numérico y desalineaciones en planta)
+     wPlan = new THREE.Vector3().crossVectors(t, e).normalize();
+
+
     // Eje de profundidad (alto) de planta: normal de la cara exterior
-    const t = (basis?.t ? basis.t.clone().normalize() : new THREE.Vector3().crossVectors(wPlan, e).normalize());
+     // (t ya calculado arriba, re-ortonormalizado)
 // Proyeccion local para planta:
     //   u = e (largo),
     //   v = w (ancho),
@@ -777,7 +1084,7 @@ static _edges() {
 
     let outerIdx = null;
     let innerIdx = null;
-	    if (opts?.edgeMidWorld && opts.edgeMidWorld.isVector3) {
+	    if (opts && opts.edgeMidWorld && opts.edgeMidWorld.isVector3) {
       const zRef = opts.edgeMidWorld.dot(t);
       const byDist = idxAll.slice().sort((i, j) =>
         Math.abs(P[i].z - zRef) - Math.abs(P[j].z - zRef)
@@ -1199,7 +1506,7 @@ const ptsL = vertsW.map(p => ({
     cA.multiplyScalar(1 / 4);
     cB.multiplyScalar(1 / 4);
 
-    const beamInfo = item?.mesh?.userData?.beamInfo || {};
+    const beamInfo = (item && item.mesh && item.mesh.userData && item.mesh.userData.beamInfo) ? item.mesh.userData.beamInfo : {};
     const h1 = Math.max(1e-9, state.h1);
     const parseKName = (s) => {
       const m = /k(\d+)/i.exec(String(s || ''));
@@ -1207,12 +1514,12 @@ const ptsL = vertsW.map(p => ({
     };
 
     // Preferimos el nombre de conector (k#) porque ya sigue la logica visible del usuario.
-    const kNameA = parseKName(beamInfo?.a?.name);
-    const kNameB = parseKName(beamInfo?.b?.name);
+    const kNameA = parseKName((beamInfo && beamInfo.a) ? beamInfo.a.name : null);
+    const kNameB = parseKName((beamInfo && beamInfo.b) ? beamInfo.b.name : null);
 
     // Fallback por Z del nodo (pos del conector) y, si no existe, por centroides de la viga.
-    const zNodeA = beamInfo?.a?.pos?.z;
-    const zNodeB = beamInfo?.b?.pos?.z;
+    const zNodeA = (beamInfo && beamInfo.a && beamInfo.a.pos) ? beamInfo.a.pos.z : null;
+    const zNodeB = (beamInfo && beamInfo.b && beamInfo.b.pos) ? beamInfo.b.pos.z : null;
 
     const kA = Number.isFinite(kNameA) ? kNameA : (Number.isFinite(zNodeA) ? Math.round(zNodeA / h1) : Math.round(cA.z / h1));
     const kB = Number.isFinite(kNameB) ? kNameB : (Number.isFinite(zNodeB) ? Math.round(zNodeB / h1) : Math.round(cB.z / h1));
@@ -1418,3 +1725,6 @@ const ptsL = vertsW.map(p => ({
     return 200;
   }
 }
+
+// Compat: avoid class static fields in older browsers
+BeamPDFReporter._keysAreVisible = null;

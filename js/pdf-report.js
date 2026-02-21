@@ -509,6 +509,15 @@ export class PDFReporter {
       }
     }
 
+    // Caso especial: cuando hay corte activo, la "pieza" del piso es un TRIANGULO
+    // ubicado en el nivel de corte (visible k=0). Para ese triangulo, el usuario
+    // necesita el ANGULO DIEDRO COMPLETO con el plano del piso, no la mitad.
+    const isFloorTriangle = (
+      state.cutActive &&
+      (level === state.cutLevel) &&
+      (vertices.length === 3)
+    );
+
     for (let i = 0; i < vertices.length; i++) {
       const edgeStart = vertices[i];
       const edgeEnd = vertices[(i + 1) % vertices.length];
@@ -548,7 +557,8 @@ export class PDFReporter {
         if (isCapEdge) {
           const angleRad = Math.acos(clamp(currentNormal.dot(capNormal)));
           const dihedralDeg = 180 - (angleRad * 180 / Math.PI);
-          angles.push(dihedralDeg / 2);
+          // Para el triangulo del piso (nivel de corte), devolver el diedro COMPLETO.
+          angles.push(isFloorTriangle ? dihedralDeg : (dihedralDeg / 2));
         } else {
           angles.push(0);
         }

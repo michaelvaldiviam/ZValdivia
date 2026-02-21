@@ -27,6 +27,28 @@ export class ShareManager {
       axis: state.axisVisible ? '1' : '0'
     });
 
+    // Estructura (vigas + conectores): incluir parametros y toggle si existen
+    // La estructura se re-genera deterministicamente desde los parametros
+    // y el estado del zonohedro, por lo que no se serializa la malla.
+    if (state.structureParams) {
+      params.set('struct', '1');
+      params.set('sv', state.structureVisible ? '1' : '0');
+      const p = state.structureParams;
+      if (Number.isFinite(Number(p.cylDiameterMm))) params.set('cd', String(Math.round(Number(p.cylDiameterMm))));
+      if (Number.isFinite(Number(p.cylDepthMm))) params.set('cp', String(Math.round(Number(p.cylDepthMm))));
+      if (Number.isFinite(Number(p.beamWidthMm))) params.set('bw', String(Math.round(Number(p.beamWidthMm))));
+      if (Number.isFinite(Number(p.beamHeightMm))) params.set('bh', String(Math.round(Number(p.beamHeightMm))));
+
+      // Overrides por nivel para conectores (opcional)
+      if (state.structureConnectorOverrides && Object.keys(state.structureConnectorOverrides).length > 0) {
+        try {
+          params.set('co', encodeURIComponent(JSON.stringify(state.structureConnectorOverrides)));
+        } catch (e) {
+          // ignorar si falla
+        }
+      }
+    }
+
     const baseURL = window.location.origin + window.location.pathname;
     return `${baseURL}?${params.toString()}`;
   }
@@ -55,6 +77,52 @@ export class ShareManager {
       state.colorByLevel = params.get('skin') === 'rainbow';
     }
 
+    // Estructura (vigas + conectores)
+    // Si vienen parametros en la URL, la estructura se re-genera automaticamente.
+    const hasStructFlag = params.get('struct') === '1' || params.has('cd') || params.has('cp') || params.has('bw') || params.has('bh');
+    if (hasStructFlag) {
+      const cd = params.has('cd') ? Number(params.get('cd')) : null;
+      const cp = params.has('cp') ? Number(params.get('cp')) : null;
+      const bw = params.has('bw') ? Number(params.get('bw')) : null;
+      const bh = params.has('bh') ? Number(params.get('bh')) : null;
+
+      // Solo activar params si estan completos
+      const complete = [cd, cp, bw, bh].every(v => Number.isFinite(v) && v > 0);
+      if (complete) {
+        state.structureParams = {
+          cylDiameterMm: cd,
+          cylDepthMm: cp,
+          beamWidthMm: bw,
+          beamHeightMm: bh,
+        };
+        state.structureVisible = params.get('sv') === '0' ? false : true;
+
+        // Overrides por nivel
+        if (params.has('co')) {
+          try {
+            const raw = decodeURIComponent(params.get('co'));
+            const obj = JSON.parse(raw);
+            if (obj && typeof obj === 'object') {
+              state.structureConnectorOverrides = obj;
+            }
+          } catch (e) {
+            // ign
+          }
+        }
+        if (params.has('cio')) {
+          try {
+            const raw = decodeURIComponent(params.get('cio'));
+            const obj = JSON.parse(raw);
+            if (obj && typeof obj === 'object') {
+              state.structureIntersectionConnectorOverrides = obj;
+            }
+          } catch (e) {
+            // ignorar
+          }
+        }
+      }
+    }
+
     updateStateCalculations();
     
     // Actualizar UI completa
@@ -62,6 +130,7 @@ export class ShareManager {
     this.uiManager.updateAllButtons();
     this.uiManager.updateGeometryInfo();
     this.uiManager.updateFacesCount();
+    // Rebuild geometria base y (si aplica) estructura
     this.sceneManager.requestRebuild();
     
     return true;
@@ -127,6 +196,13 @@ export class ShareManager {
         linesVisible: state.linesVisible,
         axisVisible: state.axisVisible,
         colorByLevel: state.colorByLevel
+      },
+      structure: {
+        visible: !!state.structureVisible,
+        params: state.structureParams ? { ...state.structureParams } : null,
+        connectorOverrides: (state.structureConnectorOverrides && typeof state.structureConnectorOverrides === 'object')
+          ? { ...state.structureConnectorOverrides }
+          : {}
       }
     };
 
@@ -176,6 +252,23 @@ export class ShareManager {
           state.linesVisible = config.visualization.linesVisible;
           state.axisVisible = config.visualization.axisVisible;
           state.colorByLevel = config.visualization.colorByLevel;
+
+          // Estructura (opcional)
+          if (config.structure && config.structure.params) {
+            state.structureParams = { ...config.structure.params };
+            state.structureVisible = !!config.structure.visible;
+
+            // Overrides por nivel
+            if (config.structure.connectorOverrides && typeof config.structure.connectorOverrides === 'object') {
+              state.structureConnectorOverrides = { ...config.structure.connectorOverrides };
+            } else {
+              state.structureConnectorOverrides = {};
+            }
+          } else {
+            state.structureParams = null;
+            state.structureVisible = false;
+            state.structureConnectorOverrides = {};
+          }
 
           updateStateCalculations();
           

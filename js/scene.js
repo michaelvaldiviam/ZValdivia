@@ -21,6 +21,7 @@ export class SceneManager {
     this.canvas = canvas;
     this.isRebuilding = false;
     this.rebuildRequested = false;
+    this._overlayUpdater = null;
     this.lazyBuildQueue = [];
     this.lazyBuildInProgress = false;
     
@@ -30,10 +31,21 @@ export class SceneManager {
     this.setupControls();
     this.setupLights();
     this.setupGroups();
+    this.setupPicking();
     this.setupHelpers();
     this.setupMaterials();
     this.setupGeometries();
   }
+
+  setupPicking() {
+    this.raycaster = new THREE.Raycaster();
+    this._ndc = new THREE.Vector2();
+  }
+
+  setOverlayUpdater(fn) {
+    this._overlayUpdater = (typeof fn === "function") ? fn : null;
+  }
+
 
   setupRenderer() {
     this.renderer = new THREE.WebGLRenderer({
@@ -442,8 +454,93 @@ export class SceneManager {
       cutLevel: s.cutLevel,
       // Parametros de estructura
       p,
+
+      // Topologia editable
+      extra: s.structureExtraBeams || [],
+      del: s.structureDeletedBeams || [],
+      xFaces: s.structureIntersectionFaces || {},
+      xOv: s.structureIntersectionConnectorOverrides || {},
+
+      // Overrides por nivel (edicion interactiva de conectores)
+      co: s.structureConnectorOverrides || {},
+      bo: s.structureBeamOverrides || {},
     });
   }
+
+  /**
+   * Raycast para seleccionar un conector cilindrico.
+   * @param {number} clientX
+   * @param {number} clientY
+   * @returns {null | { mesh:THREE.Object3D, kOriginal:number, kVisible:number, i:number, isPoleLow:boolean, isPoleTop:boolean }}
+   */
+  pickConnector(clientX, clientY) {
+    if (!this.renderer || !this.camera || !this.structureGroup) return null;
+    if (!this.structureGroup.visible || this.structureGroup.children.length === 0) return null;
+
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    const x = (clientX - rect.left) / rect.width;
+    const y = (clientY - rect.top) / rect.height;
+    this._ndc.set(x * 2 - 1, -(y * 2 - 1));
+
+    this.raycaster.setFromCamera(this._ndc, this.camera);
+    const hits = this.raycaster.intersectObjects(this.structureGroup.children, true);
+    for (const h of hits) {
+      const obj = h.object;
+      if (obj && obj.userData && obj.userData.isConnector && obj.userData.connectorInfo) {
+        const info = obj.userData.connectorInfo;
+        return {
+          mesh: obj,
+          kOriginal: info.kOriginal,
+          kVisible: info.kVisible,
+          i: info.i,
+          isIntersection: !!info.isIntersection,
+          faceK: info.faceK,
+          faceI: info.faceI,
+          isPoleLow: info.kOriginal === 0,
+          isPoleTop: info.kOriginal === state.N,
+        };
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Raycast para seleccionar una viga (beam).
+   * @param {number} clientX
+   * @param {number} clientY
+   * @returns {null | { mesh:THREE.Object3D, kLevelOriginal:number, kVisible:number, widthMm:number, heightMm:number }}
+   */
+  pickBeam(clientX, clientY) {
+    if (!this.renderer || !this.camera || !this.structureGroup) return null;
+    if (!this.structureGroup.visible || this.structureGroup.children.length === 0) return null;
+
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    const x = (clientX - rect.left) / rect.width;
+    const y = (clientY - rect.top) / rect.height;
+    this._ndc.set(x * 2 - 1, -(y * 2 - 1));
+
+    this.raycaster.setFromCamera(this._ndc, this.camera);
+    const hits = this.raycaster.intersectObjects(this.structureGroup.children, true);
+    for (const h of hits) {
+      const obj = h.object;
+      if (obj && obj.userData && obj.userData.beamInfo) {
+        const bi = obj.userData.beamInfo;
+        const kLevelOriginal = Math.max((bi.a && bi.a.k != null ? bi.a.k : 0), (bi.b && bi.b.k != null ? bi.b.k : 0));
+        const kVisible = (bi.kVisible != null) ? bi.kVisible : this._kVisible(kLevelOriginal);
+        const widthMm = (bi.widthMm != null) ? Number(bi.widthMm) : null;
+        const heightMm = (bi.heightMm != null) ? Number(bi.heightMm) : null;
+        return {
+          mesh: obj,
+          kLevelOriginal,
+          kVisible,
+          widthMm: isFinite(widthMm) ? widthMm : null,
+          heightMm: isFinite(heightMm) ? heightMm : null,
+        };
+      }
+    }
+    return null;
+  }
+
 
   /**
    * Si el usuario tiene la estructura activada, la mantiene / regenera cuando cambia la geometria.
@@ -474,7 +571,8 @@ export class SceneManager {
     this._structureSignature = this.getStructureSignature(state.structureParams);
 
     this.structureGenerator.clear();
-    this.structureGenerator.generate(params);
+    const genResult = this.structureGenerator.generate(params);
+    state.lastStructureWarnings = (genResult && genResult.warnings) ? genResult.warnings : [];
     // Respetar toggle visible
     this.structureGroup.visible = !!state.structureVisible;
   }
@@ -495,6 +593,235 @@ export class SceneManager {
       throw new Error('No hay estructura generada');
     }
     StructureOBJExporter.exportStructureToOBJ(this.structureGroup);
+  }
+
+  /**
+   * Resalta visualmente un conector seleccionado.
+   * Implementacion: agrega un outline (EdgesGeometry) temporal al mesh.
+   * @param {THREE.Object3D|null} mesh
+   */
+  setSelectedConnector(mesh) {
+    // Limpiar outline anterior
+    if (this._selectedConnectorMesh && this._selectedConnectorMesh.userData) {
+      const prev = this._selectedConnectorMesh;
+      const ol = prev.userData._zvOutline;
+      if (ol && ol.parent) {
+        try { ol.parent.remove(ol); } catch (e) {}
+      }
+      if (ol && ol.geometry) {
+        try { ol.geometry.dispose(); } catch (e) {}
+      }
+      if (ol && ol.material) {
+        try { ol.material.dispose(); } catch (e) {}
+      }
+      prev.userData._zvOutline = null;
+    }
+
+    this._selectedConnectorMesh = null;
+    if (!mesh) return;
+
+    // Crear outline si hay geometria
+    if (mesh.geometry) {
+      try {
+        const edges = new THREE.EdgesGeometry(mesh.geometry);
+        const mat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9 });
+        const outline = new THREE.LineSegments(edges, mat);
+        outline.name = 'zvConnectorOutline';
+        outline.renderOrder = 9999;
+        outline.frustumCulled = false;
+        outline.scale.set(1.01, 1.01, 1.01);
+        mesh.add(outline);
+        mesh.userData._zvOutline = outline;
+      } catch (e) {
+        console.warn('No se pudo crear outline del conector', e);
+      }
+    }
+
+    this._selectedConnectorMesh = mesh;
+  }
+
+
+  /**
+   * Resalta visualmente una viga seleccionada.
+   * Implementacion: outline (EdgesGeometry) temporal al mesh.
+   * @param {THREE.Object3D|null} mesh
+   */
+  setSelectedBeam(mesh) {
+    // Limpiar outline anterior
+    if (this._selectedBeamMesh && this._selectedBeamMesh.userData) {
+      const prev = this._selectedBeamMesh;
+      const ol = prev.userData._zvBeamOutline;
+      if (ol && ol.parent) {
+        try { ol.parent.remove(ol); } catch (e) {}
+      }
+      if (ol && ol.geometry) {
+        try { ol.geometry.dispose(); } catch (e) {}
+      }
+      if (ol && ol.material) {
+        try { ol.material.dispose(); } catch (e) {}
+      }
+      prev.userData._zvBeamOutline = null;
+    }
+
+    this._selectedBeamMesh = null;
+    if (!mesh) return;
+
+    if (mesh.geometry) {
+      try {
+        const edges = new THREE.EdgesGeometry(mesh.geometry);
+        const mat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85 });
+        const outline = new THREE.LineSegments(edges, mat);
+        outline.name = 'zvBeamOutline';
+        outline.renderOrder = 9998;
+        outline.frustumCulled = false;
+        outline.scale.set(1.01, 1.01, 1.01);
+        mesh.add(outline);
+        mesh.userData._zvBeamOutline = outline;
+      } catch (e) {
+        console.warn('No se pudo crear outline de la viga', e);
+      }
+    }
+
+    this._selectedBeamMesh = mesh;
+  }
+
+  _kVisible(kOriginal) {
+    const { cutActive, cutLevel } = state;
+    return cutActive ? Math.max(0, kOriginal - cutLevel) : kOriginal;
+  }
+
+  /**
+   * Calcula presets de "traslado hacia interior" (offset axial) para un conector seleccionado.
+   * Objetivo: que la cara exterior del cilindro (tapa exterior) quede a ras con la "punta" de la viga
+   * cuyo bisel es mas pronunciado en ese conector (angulo arista-directriz mas agudo).
+   *
+   * Retorna valores en milimetros.
+   * @param {{mesh:THREE.Object3D,kOriginal:number,kVisible:number}|null} hit
+   * @returns {{edgeMm:number, halfMm:number}|null}
+   */
+  getConnectorOffsetPresetsMm(hit) {
+    try {
+      if (!hit || !hit.mesh || !this.structureGroup) return null;
+      if (!this.structureGroup.visible || this.structureGroup.children.length === 0) return null;
+
+      // Directriz (inward) desde la orientacion del cilindro: +Y rotado
+      const axisY = new THREE.Vector3(0, 1, 0);
+      const d = axisY.clone().applyQuaternion(hit.mesh.quaternion).normalize();
+
+      // Params actuales del conector (para reconstruir la posicion del nodo)
+      const p = this._getConnectorParamsForK(hit.kOriginal);
+      if (!p) return null;
+      const depth = p.depth;
+      const offset = p.offset;
+
+      // Nodo en la superficie del zonohedro (pos) = centro - d*(depth/2 + offset)
+      const nodePos = hit.mesh.position.clone().addScaledVector(d, -(depth / 2 + offset));
+
+      // Indice del conector (si existe)
+      const hitI = (hit.mesh.userData && hit.mesh.userData.connectorInfo) ? hit.mesh.userData.connectorInfo.i : null;
+      const hitIsPole = (hit.kOriginal === 0 || hit.kOriginal === state.N);
+
+      // Buscar vigas incidentes a este conector.
+      // Elegimos la viga con bisel mas "agudo" (angulo menor) en este conector.
+      // Guardamos proyecciones sobre la directriz para poder definir presets de offset.
+      let best = null; // { angDeg, sEdge, sInner, tCenter }
+
+      this.structureGroup.traverse((obj) => {
+        if (!obj || !obj.userData || !obj.userData.beamInfo || !Array.isArray(obj.userData.objVertices)) return;
+        const bi = obj.userData.beamInfo;
+        const verts = obj.userData.objVertices;
+        if (!bi.a || !bi.b) return;
+
+        // match extremo A/B (si hay indice i, lo usamos; en polos aceptamos cualquiera)
+        const isA = (bi.a.k === hit.kOriginal) && (hitIsPole || hitI == null || bi.a.i === hitI);
+        const isB = (bi.b.k === hit.kOriginal) && (hitIsPole || hitI == null || bi.b.i === hitI);
+        if (!isA && !isB) return;
+
+        const angDeg = isA ? Number(bi.angAdeg) : Number(bi.angBdeg);
+        if (!isFinite(angDeg)) return;
+
+        // Elegir vertices del extremo que estan en la cara EXTERIOR (ancho externo, donde pasa la arista del zonohedro)
+        let idxList = null;
+        if (bi.faces && bi.faces.outer && Array.isArray(bi.faces.outer)) {
+          // outer contiene 4 indices: 2 del extremo A (<4) y 2 del extremo B (>=4)
+          idxList = bi.faces.outer.filter((ii) => isA ? (ii >= 0 && ii <= 3) : (ii >= 4 && ii <= 7));
+        }
+        if (!idxList || idxList.length < 2) {
+          idxList = isA ? [0, 1] : [4, 5]; // fallback coherente con layout habitual
+        }
+
+        // sEdge = max proyeccion sobre la directriz (tapa exterior del cilindro a ras con la punta en ancho externo)
+        let tMax = -Infinity;
+        let tMin = Infinity;
+        for (const idx of idxList) {
+          const v = verts[idx];
+          if (!v) continue;
+          const pv = (v && v.isVector3) ? v : new THREE.Vector3(v[0], v[1], v[2]);
+          const t = pv.clone().sub(nodePos).dot(d);
+          if (t > tMax) tMax = t;
+          if (t < tMin) tMin = t;
+        }
+        if (!isFinite(tMax) || !isFinite(tMin)) return;
+
+        const sEdge = Math.max(0, tMax);
+        const sInner = Math.max(0, Math.min(tMax, tMin));
+
+        // Centro de la testa (cruce de diagonales). En un quad es el promedio de sus 4 vertices.
+        const testaIdx = isA ? [0, 1, 2, 3] : [4, 5, 6, 7];
+        let c = new THREE.Vector3(0, 0, 0);
+        let cN = 0;
+        for (const ii of testaIdx) {
+          const vv = verts[ii];
+          if (!vv) continue;
+          const pv = (vv && vv.isVector3) ? vv : new THREE.Vector3(vv[0], vv[1], vv[2]);
+          c.add(pv);
+          cN++;
+        }
+        if (cN === 0) return;
+        c.multiplyScalar(1 / cN);
+        const tCenter = c.clone().sub(nodePos).dot(d);
+
+        if (!best || angDeg < best.angDeg - 1e-6) {
+          best = { angDeg, sEdge, sInner, tCenter };
+        }
+      });
+
+      if (!best) return null;
+
+      // Preset "Al borde": offset tal que la tapa exterior quede a ras con la punta (ancho externo)
+      const edgeMm = Math.max(0, Math.round(best.sEdge * 1000));
+
+      // Preset "Centro de testa": tapa exterior en el centro de la testa (cruce de diagonales), proyectado en la directriz.
+      const midMm = Math.max(0, Math.round(Math.max(0, best.tCenter) * 1000));
+
+      return { edgeMm, midMm };
+
+    } catch (e) {
+      console.warn('getConnectorOffsetPresetsMm fallo', e);
+      return null;
+    }
+  }
+
+  /**
+   * Replica de la logica de parametros por nivel (igual al generador) para uso en UI/presets.
+   * Retorna unidades en metros.
+   */
+  _getConnectorParamsForK(kOriginal) {
+    try {
+      if (!state.structureParams) return null;
+      const baseCylDepthMm = Number(state.structureParams.cylDepthMm) || 1;
+      const overrides = (state.structureConnectorOverrides && typeof state.structureConnectorOverrides === 'object')
+        ? state.structureConnectorOverrides
+        : {};
+      const ov = overrides[String(kOriginal)] || overrides[kOriginal];
+      const pMm = (ov && ov.cylDepthMm != null) ? Number(ov.cylDepthMm) : baseCylDepthMm;
+      const offMm = (ov && ov.offsetMm != null && isFinite(Number(ov.offsetMm))) ? Math.max(0, Number(ov.offsetMm)) : 0;
+      const depth = Math.max(0.001, (isFinite(pMm) && pMm > 0 ? pMm : baseCylDepthMm) / 1000);
+      const offset = Math.max(0, offMm / 1000);
+      return { depth, offset };
+    } catch (e) {
+      return null;
+    }
   }
 
   /**
@@ -582,6 +909,10 @@ export class SceneManager {
     }
 
     this.controls.update();
+    // Actualizar overlays HTML (tooltip) antes de renderizar
+    if (this._overlayUpdater) {
+      try { this._overlayUpdater(); } catch (e) {}
+    }
     this.renderer.render(this.scene, this.camera);
     requestAnimationFrame(() => this.render());
   }

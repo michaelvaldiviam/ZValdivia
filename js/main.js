@@ -70,8 +70,12 @@ class App {
     const exportNodePdfBtn = document.getElementById('exportNodePdfBtn');
     if (exportNodePdfBtn) {
       exportNodePdfBtn.addEventListener('click', async () => {
-        if (!state.rhombiVisible || rhombiData.length === 0) {
-          this.uiManager.showNotification('Debes activar las caras primero para generar el PDF de nodos');
+        // El PDF de nodos/conectores debe reflejar la CONECTIVIDAD REAL de la estructura,
+        // independiente de si las caras del zonohedro estan visibles.
+        const sg = this.sceneManager && this.sceneManager.structureGroup;
+        const hasStructure = sg && sg.children && sg.children.length > 0;
+        if (!hasStructure) {
+          this.uiManager.showNotification('Debes generar la estructura primero para crear el PDF de conectores', 'error');
           return;
         }
 
@@ -79,7 +83,7 @@ class App {
         await new Promise(resolve => setTimeout(resolve, 300));
 
         try {
-          await NodePDFReporter.generateNodeReport();
+          await NodePDFReporter.generateNodeReport(sg, this.sceneManager);
           this.uiManager.showNotification('PDF de nodos generado exitosamente', 'success');
         } catch (error) {
           console.error('Error generando PDF de nodos:', error);
@@ -94,7 +98,7 @@ class App {
     if (exportBeamsPdfBtn) {
       exportBeamsPdfBtn.addEventListener('click', async () => {
         // Requiere que la estructura exista (generada al menos una vez)
-        const sg = this.sceneManager?.structureGroup;
+        const sg = this.sceneManager && this.sceneManager.structureGroup;
         const hasStructure = sg && sg.children && sg.children.length > 0;
         if (!hasStructure) {
           this.uiManager.showNotification('Debes generar la estructura primero para crear el PDF de vigas', 'error');
