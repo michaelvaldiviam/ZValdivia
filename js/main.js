@@ -12,20 +12,18 @@ import { state, rhombiData } from './state.js';
  */
 class App {
   constructor() {
-    this.loadingComplete = false;
     this.init();
   }
 
   async init() {
     // Mostrar pantalla de carga e inicializar la app EN PARALELO
-    const [,] = await Promise.all([
+    await Promise.all([
       this.showLoadingScreen(),
       this.initApp(),
     ]);
 
     // Ocultar pantalla de carga
     await this.hideLoadingScreen();
-    this.loadingComplete = true;
   }
 
   async initApp() {

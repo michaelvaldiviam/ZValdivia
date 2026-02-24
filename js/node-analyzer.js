@@ -14,6 +14,25 @@ import { getRingVertex } from './geometry.js';
  *   de las caras incidentes al vertice (con deduplicacion por direccion).
  */
 export class NodeAnalyzer {
+  static _ensureCache() {
+    if (!this._repCache) this._repCache = new WeakMap();
+  }
+
+  static _getRepSignature() {
+    const s = state;
+    const f = (x) => (typeof x === 'number' && Number.isFinite(x)) ? x.toFixed(6) : String(x ?? '');
+    return [
+      `N=${s.N}`,
+      `aDeg=${f(s.aDeg)}`,
+      `Dmax=${f(s.Dmax)}`,
+      `floorD=${f(s.floorDiameter)}`,
+      `cut=${s.cutActive ? 1 : 0}`,
+      `cutLevel=${f(s.cutLevel)}`,
+      `h1=${f(s.h1)}`,
+      `Htotal=${f(s.Htotal)}`
+    ].join('|');
+  }
+
   static buildVertexId(k, i) {
     // Polos: todos los indices i colapsan al mismo vertice (radio 0)
     if (k === 0 || k === state.N) return `K${k}_I0`;
@@ -479,11 +498,20 @@ static getPositionByKeyVisible(keyVisible, meta) {
    */
   
 static computeRepresentativeNodes(structureGroup) {
+  this._ensureCache();
+  const sig = this._getRepSignature();
+  const cached = (structureGroup && this._repCache.get(structureGroup)) || null;
+  if (cached && cached.sig === sig && cached.data) {
+    return cached.data;
+  }
+
   const { N, cutActive, cutLevel } = state;
   const minKOrig = cutActive ? cutLevel : 0;
 
-  // Conectividad basada en estructura real (3D)
-  const { vertexToNeighbors, meta } = this.buildConnectivityFromStructure(structureGroup);
+	  // Conectividad basada en estructura real (3D)
+	  const conn = this.buildConnectivityFromStructure(structureGroup);
+	  const vertexToNeighbors = conn.vertexToNeighbors;
+	  const meta = conn.meta;
 
   // Calcular grados y baseline (moda) por nivel visible
   const levelToKeys = new Map(); // kVis -> [keyVisible]
@@ -566,7 +594,11 @@ static computeRepresentativeNodes(structureGroup) {
     repNodes.push(buildNodeFromKey(chosen));
   }
 
-  return { repNodes, vertexToNeighbors, degree, levelBaseline, meta };
+  const data = { repNodes, vertexToNeighbors, degree, levelBaseline, meta };
+
+  if (structureGroup) this._repCache.set(structureGroup, { sig, data });
+
+  return data;
 }
 
 
@@ -576,7 +608,8 @@ static computeRepresentativeNodes(structureGroup) {
   // ------------------------------------------------------------
   
 static computeNodeByConnectorKey(connectorKeyVisible, structureGroup) {
-  const { vertexToNeighbors, meta } = this.buildConnectivityFromStructure(structureGroup);
+  const data = this.computeRepresentativeNodes(structureGroup);
+  const { vertexToNeighbors, meta, levelBaseline } = data;
   const pos = this.getPositionByKeyVisible(connectorKeyVisible, meta);
   const neigh = vertexToNeighbors.get(connectorKeyVisible) ? [...vertexToNeighbors.get(connectorKeyVisible)] : [];
   const outgoing = [];
@@ -590,9 +623,6 @@ static computeNodeByConnectorKey(connectorKeyVisible, structureGroup) {
     const a = Math.atan2(o.dir.y, o.dir.x);
     return (a < 0 ? a + Math.PI * 2 : a);
   }).sort((a,b)=>a-b);
-
-  // baseline por nivel: usar computeRepresentativeNodes para tener levelBaseline
-  const data = this.computeRepresentativeNodes(structureGroup);
   let kVis = null;
   const mk = /^k(\d+)_i(\d+)$/.exec(connectorKeyVisible || '');
   if (mk) kVis = parseInt(mk[1], 10);
@@ -600,7 +630,7 @@ static computeNodeByConnectorKey(connectorKeyVisible, structureGroup) {
     const mx = /^X:(\d+):(\d+)$/.exec(connectorKeyVisible);
     if (mx) kVis = parseInt(mx[1], 10);
   }
-  const baseline = (kVis == null ? null : (data.levelBaseline.get(kVis) ?? null));
+  const baseline = (kVis == null ? null : (levelBaseline.get(kVis) ?? null));
 
   return { keyVisible: connectorKeyVisible, pos, outgoing, azimuths: az, degree: outgoing.length, baseline, meta };
 }

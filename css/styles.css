@@ -1664,6 +1664,86 @@ body,
   border-top:1px solid rgba(255,255,255,0.08);
 }
 
+
+/* =============================
+   Visor "Ver viga" (modal ancho)
+   ============================= */
+.zv-modal-wide{
+  width:min(980px, 100%);
+  height:min(88vh, 760px);
+}
+
+.zv-beamviewer-header{
+  display:flex;
+  align-items:stretch;
+  justify-content:space-between;
+  gap:10px;
+  border-bottom:1px solid rgba(255,255,255,0.08);
+}
+
+.zv-beamviewer-titlewrap{
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.zv-beamviewer-title{
+  border-bottom:none;
+  padding-bottom:8px;
+}
+
+.zv-beamviewer-subtitle{
+  padding-top:0;
+  padding-bottom:12px;
+}
+
+.zv-beamviewer-close{
+  margin:12px 12px 12px 0;
+  align-self:flex-start;
+  white-space:nowrap;
+}
+
+.zv-beamviewer-toolbar{
+  padding:10px 12px;
+  display:flex;
+  gap:8px;
+  flex-wrap:wrap;
+  align-items:center;
+  border-bottom:1px solid rgba(255,255,255,0.08);
+}
+
+.zv-beamviewer-spacer{
+  flex:1 1 auto;
+  min-width: 8px;
+}
+
+.zv-beamviewer-body{
+  flex:1 1 auto;
+  padding:12px;
+  display:flex;
+  min-height:260px;
+}
+
+.zv-beamviewer-canvas{
+  width:100%;
+  height:100%;
+  display:block;
+  border-radius:14px;
+  border:1px solid rgba(255,255,255,0.10);
+  background: rgba(255,255,255,0.03);
+  touch-action:none; /* gestos dentro del canvas */
+}
+
+@media (max-width: 520px){
+  .zv-modal-wide{
+    height:min(92vh, 820px);
+  }
+  .zv-beamviewer-toolbar .zv-btn{
+    flex:1 1 auto;
+    min-width:140px;
+  }
+}
+
+
 /* Pills (radio) para modales livianos */
 .zv-pill{
   display:flex;
@@ -1751,8 +1831,8 @@ body,
   box-shadow: 0 10px 26px rgba(0,0,0,0.22);
   font-size: 12px;
   line-height: 1.25;
-  max-width: 260px;
-  white-space: nowrap;
+  max-width: 280px;
+  white-space: normal;
 }
 .zv-beam-tooltip .zv-bt-title{
   font-weight: 700;
@@ -1844,5 +1924,111 @@ body,
     right: auto;
     left: 14px;
     bottom: calc(90px + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+/* =====================================================================
+   MODO SELECCIÓN MÚLTIPLE DE VIGAS
+   ===================================================================== */
+
+/* Botón del menú en estado activo (modo encendido) */
+.action-button.zv-multiselect-active {
+  background: rgba(239, 68, 68, 0.18);
+  border-color: rgba(239, 68, 68, 0.55);
+  color: #f87171;
+  box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.3) inset,
+              0 4px 14px rgba(239, 68, 68, 0.18);
+}
+.action-button.zv-multiselect-active:hover {
+  background: rgba(239, 68, 68, 0.26);
+  filter: none;
+}
+
+/* Botón flotante "Eliminar selección" */
+.zv-multiselect-float {
+  position: fixed;
+  left: 50%;
+  bottom: 22px;
+  transform: translateX(-50%);
+  z-index: 9997;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 20px;
+  border-radius: 999px;
+  border: 1px solid rgba(239, 68, 68, 0.45);
+  background: rgba(20, 10, 10, 0.94);
+  color: #fca5a5;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  box-shadow: 0 8px 32px rgba(239, 68, 68, 0.28),
+              0 0 0 1px rgba(239, 68, 68, 0.2) inset;
+  backdrop-filter: blur(18px);
+  transition: opacity 0.18s, transform 0.18s;
+  white-space: nowrap;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.zv-multiselect-float.zv-hidden {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-50%) translateY(12px);
+}
+.zv-multiselect-float:active {
+  transform: translateX(-50%) scale(0.97);
+}
+
+/* Badge de conteo dentro del botón flotante */
+.zv-multiselect-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: rgba(239, 68, 68, 0.75);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+/* Toast informativo — centrado arriba del botón flotante */
+.zv-multiselect-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 76px;
+  transform: translateX(-50%);
+  z-index: 9996;
+  padding: 9px 16px;
+  border-radius: 14px;
+  border: 1px solid rgba(239, 68, 68, 0.22);
+  background: rgba(20, 10, 10, 0.88);
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 12px;
+  font-weight: 500;
+  text-align: center;
+  line-height: 1.5;
+  backdrop-filter: blur(16px);
+  box-shadow: 0 6px 24px rgba(0,0,0,0.35);
+  pointer-events: none;
+  transition: opacity 0.18s;
+  white-space: normal;
+  max-width: min(260px, calc(100vw - 32px));
+}
+.zv-multiselect-toast.zv-hidden {
+  opacity: 0;
+}
+
+/* Mobile: subir botón flotante para no solapar los FAB */
+@media (pointer: coarse), (max-width: 768px) {
+  .zv-multiselect-float {
+    bottom: calc(80px + env(safe-area-inset-bottom, 0px));
+  }
+  .zv-multiselect-toast {
+    bottom: calc(136px + env(safe-area-inset-bottom, 0px));
   }
 }

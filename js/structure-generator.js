@@ -33,17 +33,36 @@ export class StructureGenerator {
     this._tmpV = new THREE.Vector3();
     // Cache de geometrías de cilindros a nivel de instancia para poder hacer dispose correcto
     this._cylGeomCache = new Map();
+    // Cache de topología (caras visibles + adyacencias) por firma de geometría
+    this._topologyCache = { sig: null, faces: null, adjacency: null };
   }
 
   clear() {
+    const sharedMats = new Set([this.matConnector, this.matBeam]);
+
+    const disposeMat = (mat) => {
+      if (!mat || typeof mat.dispose !== 'function') return;
+      if (sharedMats.has(mat)) return; // material compartido del generador
+      try { mat.dispose(); } catch (e) {}
+    };
+
+    const disposeObject = (root) => {
+      if (!root) return;
+      root.traverse((o) => {
+        // Geometrías cacheadas (cilindros / reutilizables) se disponen por separado abajo.
+        if (o.geometry && !(o.geometry.userData && o.geometry.userData._zvCachedGeom)) {
+          try { o.geometry.dispose(); } catch (e) {}
+        }
+        if (o.material) {
+          if (Array.isArray(o.material)) o.material.forEach(disposeMat);
+          else disposeMat(o.material);
+        }
+      });
+    };
+
     while (this.group.children.length) {
       const ch = this.group.children[0];
-      // Las geometrías del cache de instancia se disponen por separado abajo.
-      // Solo disponemos geometrías que NO están en el cache de cilindros.
-      if (ch.geometry && !(ch.geometry.userData && ch.geometry.userData._zvCachedGeom)) {
-        ch.geometry.dispose();
-      }
-      if (ch.material && ch.material.dispose) ch.material.dispose();
+      disposeObject(ch);
       this.group.remove(ch);
     }
     // Disponer todas las geometrías cacheadas de cilindros y limpiar el cache
@@ -150,10 +169,36 @@ export class StructureGenerator {
     };
 
     // 1) Construir caras visibles (triangulos/quads) en coordenadas del mundo (sin aplicar shift del mainGroup)
-    const faces = this._buildVisibleFaces();
+    // ⚠️ IMPORTANTE SOBRE EL CACHE
+    // La generación de estructura (extra/deleted/intersecciones) MUTa edgeMap/vertexMap.
+    // Por lo tanto, el cache debe almacenar una "base" INMUTABLE y en cada generate()
+    // se deben usar COPIAS de esos Map para no contaminar el cache.
+    const topoSig = this._getTopologySignature();
+    let faces;
+    let baseVertexMap;
+    let baseEdgeMap;
 
-    // 2) Calcular normales inward por cara y acumular incidencia por vertice
-    const { vertexMap, edgeMap } = this._buildAdjacencyFromFaces(faces);
+    if (this._topologyCache && this._topologyCache.sig === topoSig && this._topologyCache.faces && this._topologyCache.adjacency) {
+      faces = this._topologyCache.faces;
+      ({ vertexMap: baseVertexMap, edgeMap: baseEdgeMap } = this._topologyCache.adjacency);
+    } else {
+      faces = this._buildVisibleFaces();
+
+      // 2) Calcular normales inward por cara y acumular incidencia por vertice
+      ({ vertexMap: baseVertexMap, edgeMap: baseEdgeMap } = this._buildAdjacencyFromFaces(faces));
+
+      // Guardar BASE (no se debe mutar nunca)
+      this._topologyCache = {
+        sig: topoSig,
+        faces,
+        adjacency: { vertexMap: baseVertexMap, edgeMap: baseEdgeMap },
+      };
+    }
+
+    // Copias de trabajo (evita solapes/duplicados por contaminación del cache)
+    // Nota: copiamos los Map; los objetos value se reutilizan (no se mutan salvo directrix, que se recomputa siempre).
+    const vertexMap = new Map(baseVertexMap);
+    const edgeMap = new Map(baseEdgeMap);
 
     // 2.05) Vigas eliminadas por el usuario (se excluyen de edgeMap)
     // Guardamos las eliminaciones como edgeKeys deterministicas: "<aKey>|<bKey>" (ordenadas)
@@ -237,21 +282,52 @@ export class StructureGenerator {
         const tKey = this._keyForVertex(vT.k, vT.i);
         const lKey = this._keyForVertex(vL.k, vL.i);
 
-        // Diagonales "canonicas" del rombo segun la construccion de la cara
-        const hasH = hasDiag(lKey, rKey, 'diagH');
-        const hasV = hasDiag(bKey, tKey, 'diagV');
+        // --- Interseccion de diagonales (conector central X) ---
+        // Importante:
+        // - El conector X SOLO debe existir cuando H y V estan presentes simultaneamente.
+        // - Si el usuario elimino TODOS los tramos de una diagonal (en modo segmentado),
+        //   esa diagonal debe considerarse AUSENTE para efectos de interseccion.
+        //   (Evita que aparezca X al restaurar solo una diagonal).
 
+        // Identificador deterministico del rombo (kFace:iFace)
+        const kFace = Number(vR.k);
+        const iFace = Number(vB.i);
+        const faceId = `${kFace}:${iFace}`;
+
+        // Key unico para el conector de interseccion por rombo (aunque no exista aun)
+        const cKey = `X:${kFace}:${iFace}`;
+
+        // Diagonales "canonicas" del rombo segun la construccion de la cara
+        const hasH0 = hasDiag(lKey, rKey, 'diagH');
+        const hasV0 = hasDiag(bKey, tKey, 'diagV');
+
+        // Llaves de arista (mismo formato que deletedSet)
+        const ekLR = edgeKey(lKey, rKey);
+        const ekBT = edgeKey(bKey, tKey);
+        const ekLX = edgeKey(lKey, cKey);
+        const ekXR = edgeKey(cKey, rKey);
+        const ekBX = edgeKey(bKey, cKey);
+        const ekXT = edgeKey(cKey, tKey);
+
+        // Si el usuario elimino ambos tramos de una diagonal segmentada, considerarla removida.
+        const segHAllDeleted = deletedSet.has(ekLX) && deletedSet.has(ekXR);
+        const segVAllDeleted = deletedSet.has(ekBX) && deletedSet.has(ekXT);
+
+        // Si una diagonal esta completamente eliminada via tramos, eliminar tambien su diagonal canonica
+        // (porque en extraSet seguira existiendo, pero el usuario la borro del rombo).
+        if (hasH0 && segHAllDeleted) edgeMap.delete(ekLR);
+        if (hasV0 && segVAllDeleted) edgeMap.delete(ekBT);
+
+        // Diagonal activa: existe en extraSet y NO esta borrada (ni por diagonal directa ni por ambos tramos)
+        const hasH = hasH0 && !deletedSet.has(ekLR) && !segHAllDeleted;
+        const hasV = hasV0 && !deletedSet.has(ekBT) && !segVAllDeleted;
+
+        // Si no estan ambas activas, NO crear conector X ni segmentar.
         if (!(hasH && hasV)) continue;
 
         // Solo crear conector central si este rombo fue marcado explicitamente
         // cuando el usuario creo la SEGUNDA diagonal.
-        const kFace = Number(vR.k);
-        const iFace = Number(vB.i);
-        const faceId = `${kFace}:${iFace}`;
         if (!intersectionFaces[faceId]) continue;
-
-        // Key unico para el conector de interseccion por rombo
-        const cKey = `X:${kFace}:${iFace}`;
 
         // Posicion del centro: interseccion de diagonales => promedio de puntos medios
         const vLdata = vertexMap.get(lKey);
@@ -356,9 +432,9 @@ export class StructureGenerator {
 
       const { radius: cylRadius, depth: cylDepth, offset: cylOffset, offsetMm } = cylForK(k, !!v.isIntersection);
 
-      const dir = v.directrix.clone().normalize();
+      const dir = v.directrix.clone(); // ya normalizado en el paso 3 (sum.normalize())
       const q = new THREE.Quaternion().setFromUnitVectors(axisY, dir);
-      const mesh = new THREE.Mesh(getCylGeom(cylRadius, cylDepth, 20), this.matConnector.clone());
+      const mesh = new THREE.Mesh(getCylGeom(cylRadius, cylDepth, 20), this.matConnector);
       // Posicion: por defecto la tapa exterior coincide con el nodo (pos).
       // Con offset, desplazamos todo el cilindro hacia el interior a lo largo de la directriz.
       // Importante: esto NO cambia el eje del cilindro, solo su ubicacion axial.
@@ -451,7 +527,7 @@ export class StructureGenerator {
 
       // geom puede traer metadata para exportacion en QUADS
       const g = geom.geometry ? geom.geometry : geom;
-      const m = new THREE.Mesh(g, this.matBeam.clone());
+      const m = new THREE.Mesh(g, this.matBeam);
       if (geom.objQuads && geom.objVertices) {
         m.userData.objQuads = geom.objQuads;
         m.userData.objVertices = geom.objVertices;
@@ -470,18 +546,23 @@ export class StructureGenerator {
         // Keys deterministicas de vertices (incluye conectores centrales X:...)
         aKey: e.aKey,
         bKey: e.bKey,
-        a: { name: aName, k: a.k, i: a.i, pos: pA2.clone() },
-        b: { name: bName, k: b.k, i: b.i, pos: pB2.clone() },
+        // pos: extremo recortado (tope con cilindro). nodePos: centro del nodo (origen del conector).
+        a: { name: aName, k: a.k, i: a.i, pos: pA2.clone(), nodePos: pA.clone() },
+        b: { name: bName, k: b.k, i: b.i, pos: pB2.clone(), nodePos: pB.clone() },
         // Guardar directrices y direccion de arista para reportes (Ang(d))
         aDir: a.directrix.clone(),
         bDir: b.directrix.clone(),
         edgeDir: dir.clone(),
         id: this._beamId(a, b),
         // Angulo entre arista y directriz en cada extremo (en grados)
-        angAdeg: THREE.MathUtils.radToDeg(Math.acos(THREE.MathUtils.clamp(Math.abs(dir.clone().normalize().dot(a.directrix.clone().normalize())), -1, 1))),
-        angBdeg: THREE.MathUtils.radToDeg(Math.acos(THREE.MathUtils.clamp(Math.abs(dir.clone().negate().normalize().dot(b.directrix.clone().normalize())), -1, 1))),
+        angAdeg: THREE.MathUtils.radToDeg(Math.acos(THREE.MathUtils.clamp(Math.abs(dir.dot(a.directrix)), -1, 1))),
+        angBdeg: THREE.MathUtils.radToDeg(Math.acos(THREE.MathUtils.clamp(Math.abs(dir.clone().negate().dot(b.directrix)), -1, 1))),
         widthMm: Math.round(beamWidthLocal * 1000),
         heightMm: Math.round(beamHeightLocal * 1000),
+        // Largo real de extremo a extremo (ya recortado por cilindros)
+        lenMm: Math.round(effLen * 1000),
+        // Distancia centro-a-centro entre nodos (sin recorte)
+        nodeLenMm: Math.round(len * 1000),
         faces: (geom.faces ? geom.faces : null),
         kind: e.kind || 'edge',
       };
@@ -577,6 +658,21 @@ export class StructureGenerator {
     if (k === 0) return 'pole_low';
     if (k === state.N) return 'pole_top';
     return `k${k}_i${i}`;
+  }
+
+  _getTopologySignature() {
+    const s = state;
+    const f = (x) => (typeof x === 'number' && Number.isFinite(x)) ? x.toFixed(6) : String(x ?? '');
+    return [
+      `N=${s.N}`,
+      `aDeg=${f(s.aDeg)}`,
+      `Dmax=${f(s.Dmax)}`,
+      `floorD=${f(s.floorDiameter)}`,
+      `cut=${s.cutActive ? 1 : 0}`,
+      `cutLevel=${f(s.cutLevel)}`,
+      `h1=${f(s.h1)}`,
+      `Htotal=${f(s.Htotal)}`
+    ].join('|');
   }
 
   _posForVertex(k, i) {

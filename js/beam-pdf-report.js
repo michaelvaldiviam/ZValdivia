@@ -27,6 +27,7 @@ export class BeamPDFReporter {
     let minK = Infinity;
     let sawAny = false;
     structureGroup.traverse((obj) => {
+      if (obj && obj.visible === false) return;
       const info = (obj && obj.userData && obj.userData.beamInfo) ? obj.userData.beamInfo : null;
       if (!info) return;
       const keys = [info.aKey, info.bKey];
@@ -86,6 +87,56 @@ static async generateBeamsReport(structureGroup, sceneManager = null) {
   }
 
   /**
+   * Genera un PDF con el detalle de UNA sola viga (mismo layout que el PDF de vigas),
+   * ideal para descargar desde el visor "Ver viga".
+   */
+  static async generateSingleBeamReport(beamMesh, sceneManager = null) {
+    if (!beamMesh) throw new Error('Viga no válida');
+
+    const structureGroup = (sceneManager && sceneManager.structureGroup) ? sceneManager.structureGroup : null;
+    BeamPDFReporter._initKeySpace(structureGroup);
+
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+
+    // kVisible: preferir el del beamInfo si existe
+    const info = (beamMesh.userData && beamMesh.userData.beamInfo) ? beamMesh.userData.beamInfo : {};
+    const kVisible = Number.isFinite(info.kVisible) ? info.kVisible : this._parseK(beamMesh.name);
+
+    const beamCountMap = structureGroup ? BeamPDFReporter._countBeamInstances(structureGroup) : new Map();
+
+    await this._addBeamPage(doc, { mesh: beamMesh, kVisible: (Number.isFinite(kVisible) ? kVisible : 0) }, 1, sceneManager, beamCountMap);
+
+    // Nombre de archivo: conectar + largo
+    const pair = this._normalizeConnPair(info);
+    const kind = (info && info.kind) ? String(info.kind) : 'edge';
+    const aKey = (info && typeof info.aKey === 'string') ? info.aKey : '';
+    const bKey = (info && typeof info.bKey === 'string') ? info.bKey : '';
+    const touchesX = (aKey.startsWith('X:') || bKey.startsWith('X:')) ? 1 : 0;
+    const isExtra = (kind !== 'edge') || touchesX === 1;
+
+    let connA = 'k?';
+    let connB = 'k?';
+    if (isExtra) {
+      connA = BeamPDFReporter._formatConnectorKeyVisible(aKey);
+      connB = BeamPDFReporter._formatConnectorKeyVisible(bKey);
+    } else if (pair && Number.isFinite(pair.kLo) && Number.isFinite(pair.kHi)) {
+      connA = `k${BeamPDFReporter._toVisibleK(pair.kLo)}`;
+      connB = `k${BeamPDFReporter._toVisibleK(pair.kHi)}`;
+    } else {
+      connA = (info && info.a && info.a.name) ? info.a.name : 'k?';
+      connB = (info && info.b && info.b.name) ? info.b.name : 'k?';
+    }
+
+    const lenMm = Math.round(this._beamLengthWorld(beamMesh) * 1000);
+    const safe = (s) => String(s || '').replace(/[^\w\-]+/g, '_').replace(/^_+|_+$/g, '');
+    const filename = `Viga_${safe(connA)}_${safe(connB)}_L${lenMm}mm.pdf`;
+
+    doc.save(filename);
+  }
+
+
+  /**
    * Cuenta instancias reales de vigas presentes en la estructura visible.
    * Retorna Map con key "<kind>:<touchesX>:<kLo>-<kHi>:L<lemma(мм)>" -> count.
    *
@@ -103,6 +154,7 @@ static async generateBeamsReport(structureGroup, sceneManager = null) {
     const seenUnique = new Set();
 
     structureGroup.traverse((obj) => {
+      if (obj && obj.visible === false) return;
       const info = (obj && obj.userData && obj.userData.beamInfo) ? obj.userData.beamInfo : null;
       if (!info) return;
 
@@ -205,8 +257,11 @@ static _endpointPairVisible(info) {
 static _beamCountKey(info, mesh) {
   // Key robusta para conteos y agrupaciones en PDF.
   // - Para vigas base (kind=edge sin tocar X): agrupar por niveles visibles + longitud.
-  // - Para extras (diagonales / tramos hacia X / cualquier kind != edge): además incluir endpoints visibles
-  //   para separar casos “mismo tipo” pero conectores distintos (ej. aparece conector X nuevo).
+  // - Para extras:
+  //    * Diagonales (diagH/diagV): agrupar por GEOMETRÍA dentro del mismo nivel (kLo-kHi) para
+  //      colapsar repeticiones entre rombos distintos del mismo nivel (solo cambia el conteo).
+  //    * Otros extras (tramos hacia X / kind != edge): incluir endpoints visibles para separar
+  //      conectores distintos (evita mezclar casos heterogéneos).
   const pair = BeamPDFReporter._normalizeConnPair(info);
   if (!pair || !Number.isFinite(pair.kLo) || !Number.isFinite(pair.kHi)) return null;
 
@@ -231,6 +286,24 @@ static _beamCountKey(info, mesh) {
     return `${kind}:${touchesX}:${kLoVis}-${kHiVis}${L}`;
   }
 
+  // --- Diagonales: agrupar por sección repetida (misma geometría) a nivel de k ---
+  // Esto permite que el PDF muestre una sola página por "sección de diagonal" repetida
+  // en varios rombos del mismo nivel, aumentando solo el contador de unidades.
+  if (kind === 'diagH' || kind === 'diagV') {
+    const w = Number.isFinite(info && info.widthMm) ? Math.round(info.widthMm) : null;
+    const h = Number.isFinite(info && info.heightMm) ? Math.round(info.heightMm) : null;
+    const aAng = Number.isFinite(info && info.angAdeg) ? (Math.round(info.angAdeg * 10) / 10) : null;
+    const bAng = Number.isFinite(info && info.angBdeg) ? (Math.round(info.angBdeg * 10) / 10) : null;
+    // Orden estable (no depende de si la diagonal se construyó A->B o B->A)
+    const aMin = (aAng != null && bAng != null) ? Math.min(aAng, bAng) : (aAng != null ? aAng : bAng);
+    const aMax = (aAng != null && bAng != null) ? Math.max(aAng, bAng) : (aAng != null ? aAng : bAng);
+    const A = (aMin != null) ? `:A${aMin}` : '';
+    const B = (aMax != null) ? `:B${aMax}` : '';
+    const W = (w != null) ? `:W${w}` : '';
+    const H = (h != null) ? `:H${h}` : '';
+    return `${kind}:${touchesX}:${kLoVis}-${kHiVis}${L}${A}${B}${W}${H}`;
+  }
+
   const ep = BeamPDFReporter._endpointPairVisible(info);
   return `${kind}:${touchesX}:${kLoVis}-${kHiVis}${L}:${ep.a}<->${ep.b}`;
 }
@@ -239,6 +312,8 @@ static _pickRepresentativeBeams(structureGroup) {
     const children = (structureGroup && structureGroup.children) ? structureGroup.children : [];
     const beamMeshes = children.filter(o => {
       if (!o || typeof o.name !== 'string' || !o.name.startsWith('beam_k')) return false;
+      // No incluir objetos ocultos (evita "fantasmas" en PDF si algo quedara visible=false)
+      if (o.visible === false) return false;
       const kind = (o.userData && o.userData.beamInfo && o.userData.beamInfo.kind) ? o.userData.beamInfo.kind : 'edge';
       // Representantes SOLO de vigas base (aristas originales). Extras/diagonales se reportan aparte.
       return kind === 'edge';
@@ -294,6 +369,7 @@ static _pickExtraBeams(structureGroup, alreadyPicked) {
   for (const obj of children) {
     if (!obj || !obj.userData || !obj.userData.beamInfo) continue;
     if (!obj.userData.isBeam) continue;
+    if (obj.visible === false) continue;
     const info = obj.userData.beamInfo;
     const id = info.id || null;
     if (id && pickedSet.has(id)) continue;

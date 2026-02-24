@@ -72,9 +72,9 @@ export function createPolygons(polygonsGroup, matPolyLine, matPolyFill) {
 /**
  *   OPTIMIZACION: Crear helices con geometria merged
  */
-export function createHelices(helixGroup, matHelixCCW, matHelixCW) {
+export function createHelices(helixGroup, matHelixCCW, matHelixCW, matHelixTip) {
   const { N, cutActive, cutLevel } = state;
-  const matHelixTip = new THREE.LineBasicMaterial({ color: 0xffffff });
+  const _matHelixTip = matHelixTip || new THREE.LineBasicMaterial({ color: 0xffffff });
 
   function createHelicesWithSign(sign) {
     const bodyPoints = [];
@@ -135,7 +135,7 @@ export function createHelices(helixGroup, matHelixCCW, matHelixCW) {
     if (tipPoints.length > 0) {
       const tipGeom = new THREE.BufferGeometry().setFromPoints(tipPoints);
       tipGeom.attributes.position.usage = THREE.StaticDrawUsage;
-      helixGroup.add(new THREE.LineSegments(tipGeom, matHelixTip));
+      helixGroup.add(new THREE.LineSegments(tipGeom, _matHelixTip));
     }
   }
 
@@ -217,6 +217,9 @@ export function createRhombi(rhombiGroup, matRhombus) {
         side: THREE.DoubleSide,
         flatShading: true,
       });
+      // Marcar como material temporal (uno por nivel) para facilitar
+      // trazabilidad y dispose correcto al limpiar el grupo.
+      levelMaterial.userData._zvLevelMat = true;
     } else {
       levelMaterial = matRhombus;
     }
@@ -319,7 +322,7 @@ export function createCutCap(capGroup, capMaterial) {
 /**
  *   OPTIMIZACION: Puntos usando InstancedMesh
  */
-export function createAxisAndPoints(axisGroup, geomPoint, matPoint) {
+export function createAxisAndPoints(axisGroup, geomPoint, matPoint, matAxisLine) {
   const { N, Htotal, h1, cutActive, cutLevel } = state;
   const startZ = cutActive ? cutLevel * h1 : 0;
 
@@ -329,7 +332,7 @@ export function createAxisAndPoints(axisGroup, geomPoint, matPoint) {
   
   axisGroup.add(new THREE.Line(
     axisGeom,
-    new THREE.LineBasicMaterial({ color: 0x444444 })
+    (matAxisLine || new THREE.LineBasicMaterial({ color: 0x444444 }))
   ));
 
   const startK = cutActive ? cutLevel : 0;

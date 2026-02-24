@@ -218,6 +218,10 @@ export class SceneManager {
 
     this.matHelixCCW = new THREE.LineBasicMaterial({ color: 0xffd700 });
     this.matHelixCW = new THREE.LineBasicMaterial({ color: 0x00bfff });
+    // Tips blancos de hélices (material compartido para evitar fugas GPU)
+    this.matHelixTip = new THREE.LineBasicMaterial({ color: 0xffffff });
+    // Línea de eje (material compartido para evitar fugas GPU)
+    this.matAxisLine = new THREE.LineBasicMaterial({ color: 0x444444 });
 
     this.matRhombus = new THREE.MeshPhysicalMaterial({
       color: 0xffffff,
@@ -324,7 +328,7 @@ export class SceneManager {
     }
 
     if (state.axisVisible) {
-      createAxisAndPoints(this.axisGroup, this.geomPoint, this.matPoint);
+      createAxisAndPoints(this.axisGroup, this.geomPoint, this.matPoint, this.matAxisLine);
     }
 
     // Mantener/actualizar estructura (independiente de caras/lineas)
@@ -338,7 +342,7 @@ export class SceneManager {
     
     if (state.linesVisible) {
       this.lazyBuildQueue.push(() => {
-        createHelices(this.helixGroup, this.matHelixCCW, this.matHelixCW);
+        createHelices(this.helixGroup, this.matHelixCCW, this.matHelixCW, this.matHelixTip);
         createRhombiEdges(this.edgesGroup, this.matEdge);
       });
     }
@@ -404,7 +408,7 @@ export class SceneManager {
 
     // 2) Helices y aristas de rombos
     if (state.linesVisible) {
-      createHelices(this.helixGroup, this.matHelixCCW, this.matHelixCW);
+      createHelices(this.helixGroup, this.matHelixCCW, this.matHelixCW, this.matHelixTip);
       createRhombiEdges(this.edgesGroup, this.matEdge);
     }
 
@@ -421,7 +425,7 @@ export class SceneManager {
 
     // 5) Axis and points
     if (state.axisVisible) {
-      createAxisAndPoints(this.axisGroup, this.geomPoint, this.matPoint);
+      createAxisAndPoints(this.axisGroup, this.geomPoint, this.matPoint, this.matAxisLine);
     }
 
     // 6) Mantener/actualizar estructura (independiente de caras/lineas)
@@ -856,45 +860,48 @@ export class SceneManager {
    * Metodo mejorado para limpiar grupos y liberar memoria
    */
   clearGroup(group) {
+    // Materiales de la escena que son compartidos y NUNCA deben disponerse aquí.
+    // Nota: matConnector y matBeam pertenecen a StructureGenerator (no a SceneManager)
+    // y se gestionan en StructureGenerator.clear(). No se incluyen en este Set.
+    const shared = new Set([
+      this.matRhombus,
+      this.matPolyLine,
+      this.matPolyFill,
+      this.matHelixCCW,
+      this.matHelixCW,
+      this.matHelixTip,
+      this.matEdge,
+      this.matPoint,
+      this.matCap,
+      this.matAxisLine,
+    ]);
+
+    const disposeMaterial = (mat) => {
+      if (!mat || shared.has(mat)) return;
+      try { mat.dispose(); } catch (e) { /* noop */ }
+    };
+
+    const disposeObject = (obj) => {
+      if (!obj) return;
+
+      // Geometría: respetar cachés (StructureGenerator marca _zvCachedGeom)
+      if (obj.geometry && !(obj.geometry.userData && obj.geometry.userData._zvCachedGeom)) {
+        try { obj.geometry.dispose(); } catch (e) { /* noop */ }
+      }
+
+      // Materiales
+      if (obj.material) {
+        if (Array.isArray(obj.material)) obj.material.forEach(disposeMaterial);
+        else disposeMaterial(obj.material);
+      }
+    };
+
+    // Disponer recursivamente antes de remover
+    group.traverse(disposeObject);
+
+    // Limpiar jerarquía del grupo
     while (group.children.length > 0) {
-      const child = group.children[0];
-      
-      // Liberar geometrias
-      if (child.geometry) {
-        child.geometry.dispose();
-      }
-      
-      // Liberar materiales (solo si no son compartidos)
-      if (child.material) {
-        if (Array.isArray(child.material)) {
-          child.material.forEach(mat => {
-            if (mat !== this.matRhombus && 
-                mat !== this.matPolyLine && 
-                mat !== this.matPolyFill &&
-                mat !== this.matHelixCCW &&
-                mat !== this.matHelixCW &&
-                mat !== this.matEdge &&
-                mat !== this.matPoint &&
-                mat !== this.matCap) {
-              mat.dispose();
-            }
-          });
-        } else {
-          if (child.material !== this.matRhombus && 
-              child.material !== this.matPolyLine && 
-              child.material !== this.matPolyFill &&
-              child.material !== this.matHelixCCW &&
-              child.material !== this.matHelixCW &&
-              child.material !== this.matEdge &&
-              child.material !== this.matPoint &&
-              child.material !== this.matCap) {
-            child.material.dispose();
-          }
-        }
-      }
-      
-      // Remover del grupo
-      group.remove(child);
+      group.remove(group.children[0]);
     }
   }
 

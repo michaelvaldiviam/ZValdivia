@@ -1,5 +1,7 @@
 import { state, updateStateCalculations, rhombiData } from './state.js';
 import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { BeamPDFReporter } from './beam-pdf-report.js';
 
 /**
  * Maneja toda la logica de la interfaz de usuario
@@ -10,6 +12,8 @@ export class UIManager {
     this.debounceTimer = null;
     this.throttleTimer = null;
     this.isUpdating = false;
+    this._throttleTimers = Object.create(null);
+    this._notificationStyleInjected = false;
     // Timers separados para evitar condición de carrera entre debounce y throttle
     this._cutDebounceTimer = null;
     this._floorDebounceTimer = null;
@@ -72,6 +76,10 @@ export class UIManager {
     this.toggleDiagonalModeBtn = document.getElementById('toggleDiagonalModeBtn');
     this.clearExtraBeamsBtn = document.getElementById('clearExtraBeamsBtn');
 
+    // Selección múltiple de vigas
+    this.multiSelectBeamsBtn = document.getElementById('multiSelectBeamsBtn');
+    this.multiSelectBeamsBtnLabel = document.getElementById('multiSelectBeamsBtnLabel');
+
     // Cut plane control
     this.cutBtn = document.getElementById('cutBtn');
     this.cutControls = document.getElementById('cutControls');
@@ -110,9 +118,6 @@ export class UIManager {
     this.heightIndicatorButton = document.getElementById('heightIndicatorButton');
     this.heightIndicatorTimer = null;
 
-    //   PERFORMANCE: No crear indicador de FPS (opcional)
-    // this.createPerformanceIndicator();
-    
     // Configurar grupos colapsables
     this.setupCollapsibleGroups();
 
@@ -120,32 +125,12 @@ export class UIManager {
     this._diagModeActive = false;
     this._diagFirstHit = null;
     this._diagModalEl = null;
-  }
 
-  createPerformanceIndicator() {
-    // Crear elemento de FPS si no existe
-    if (!document.getElementById('fpsCounter')) {
-      const fpsDiv = document.createElement('div');
-      fpsDiv.id = 'fpsCounter';
-      fpsDiv.style.cssText = `
-        position: fixed;
-        bottom: 12px;
-        left: 12px;
-        background: rgba(20, 20, 25, 0.85);
-        backdrop-filter: blur(20px);
-        border: 1px solid rgba(255, 255, 255, 0.12);
-        border-radius: 8px;
-        padding: 6px 10px;
-        font-family: ui-monospace, Menlo, Consolas, monospace;
-        font-size: 11px;
-        color: #9ca3af;
-        z-index: 100;
-        pointer-events: none;
-      `;
-      fpsDiv.textContent = 'FPS: --';
-      document.body.appendChild(fpsDiv);
-      this.fpsCounter = fpsDiv;
-    }
+    // Estado UI para selección múltiple de vigas
+    this._multiSelectModeActive = false;
+    this._multiSelectedBeams = [];    // Array de { mesh, edgeKey, outlineMesh }
+    this._multiSelectFloatEl = null;
+    this._multiSelectToastEl = null;
   }
 
   setupCollapsibleGroups() {
@@ -160,6 +145,33 @@ export class UIManager {
 
     // Por defecto, todos los grupos empiezan colapsados
     document.querySelectorAll('.option-group').forEach(g => g.classList.add('collapsed'));
+  }
+
+
+  _ensureNotificationStyles() {
+    // Evitar inyección acumulativa de <style> en <head>
+    if (this._notificationStyleInjected) return;
+    const id = 'zv-notification-styles';
+    if (document.getElementById(id)) {
+      this._notificationStyleInjected = true;
+      return;
+    }
+    const style = document.createElement('style');
+    style.id = id;
+    style.textContent = `
+      @keyframes slideIn {
+        from {
+          opacity: 0;
+          transform: translate(-50%, -60%);
+        }
+        to {
+          opacity: 1;
+          transform: translate(-50%, -50%);
+        }
+      }
+    `;
+    document.head.appendChild(style);
+    this._notificationStyleInjected = true;
   }
 
   showNotification(message, type = 'info') {
@@ -207,21 +219,7 @@ export class UIManager {
       </div>
     `;
 
-    // Agregar animacion CSS
-    const style = document.createElement('style');
-    style.textContent = `
-      @keyframes slideIn {
-        from {
-          opacity: 0;
-          transform: translate(-50%, -60%);
-        }
-        to {
-          opacity: 1;
-          transform: translate(-50%, -50%);
-        }
-      }
-    `;
-    document.head.appendChild(style);
+    this._ensureNotificationStyles();
 
     document.body.appendChild(notification);
 
@@ -244,7 +242,8 @@ export class UIManager {
       setTimeout(() => {
         try { if (notification.parentNode) notification.parentNode.removeChild(notification); } catch(e){}
         try { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); } catch(e){}
-        try { if (style.parentNode) style.parentNode.removeChild(style); } catch(e){}
+        // Nota: el <style> de animación es permanente (inyectado una sola vez por
+        // _ensureNotificationStyles). No se elimina aquí.
       }, 300);
     };
 
@@ -300,6 +299,11 @@ export class UIManager {
     }
     if (this.clearExtraBeamsBtn) {
       this.clearExtraBeamsBtn.addEventListener('click', () => this._clearExtraBeams());
+    }
+
+    // Selección múltiple de vigas
+    if (this.multiSelectBeamsBtn) {
+      this.multiSelectBeamsBtn.addEventListener('click', () => this._toggleMultiSelectBeamsMode());
     }
 
     if (this.toggleStructureVisible) {
@@ -432,13 +436,20 @@ export class UIManager {
 
         if (hitBeam) {
           try { ev.preventDefault(); } catch (e) {}
-          this._handleBeamTap(hitBeam);
+          // Modo selección múltiple: intercept antes del flujo normal
+          if (this._multiSelectModeActive) {
+            this._handleMultiSelectBeamTap(hitBeam);
+          } else {
+            this._handleBeamTap(hitBeam);
+          }
           return;
         }
 
-        // Click en vacio: limpiar selecciones
-        this._clearConnectorTooltipAndSelection();
-        this._clearBeamTooltipAndSelection();
+        // Click en vacio: limpiar selecciones (solo en modo normal)
+        if (!this._multiSelectModeActive) {
+          this._clearConnectorTooltipAndSelection();
+          this._clearBeamTooltipAndSelection();
+        }
 
         // Si estabamos en modo diagonales, resetear el primer conector seleccionado
         if (this._diagModeActive) {
@@ -603,6 +614,11 @@ _toggleDiagonalMode() {
     return;
   }
 
+  // Modos exclusivos: salir de selección múltiple si se activa diagonal
+  if (willEnable && this._multiSelectModeActive) {
+    this._exitMultiSelectBeamsMode(false);
+  }
+
   this._diagModeActive = willEnable;
   if (this.toggleDiagonalModeBtn) {
     this.toggleDiagonalModeBtn.classList.toggle('active', this._diagModeActive);
@@ -682,6 +698,260 @@ _clearExtraBeams() {
   this.showNotification('Vigas extra eliminadas.', 'success');
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// MODO SELECCIÓN MÚLTIPLE DE VIGAS
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Activa / desactiva el modo selección múltiple de vigas.
+ * Al activar: cambia el botón a "Cancelar", muestra el toast informativo.
+ * Al desactivar (Cancelar): limpia toda selección y vuelve al estado normal.
+ */
+_toggleMultiSelectBeamsMode() {
+  if (this._multiSelectModeActive) {
+    // Salir del modo — cancelar todo
+    this._exitMultiSelectBeamsMode(false);
+    return;
+  }
+
+  // Validar que haya estructura generada
+  if (!this._structureIsGenerated()) {
+    this.showNotification('Genera la estructura antes de usar la selección múltiple.', 'error');
+    return;
+  }
+
+  // Entrar en modo
+  this._multiSelectModeActive = true;
+  this._multiSelectedBeams = [];
+
+  // Actualizar botón del menú → "Cancelar"
+  this._updateMultiSelectBtn();
+
+  // Mostrar botón flotante (inicialmente oculto, se muestra con ≥1 selección)
+  this._ensureMultiSelectFloat();
+  this._updateMultiSelectFloat();
+
+  // Mostrar toast instruccional
+  this._ensureMultiSelectToast();
+  this._setMultiSelectToastVisible(true);
+
+  // Desactivar el modo diagonal si estaba activo (modos exclusivos)
+  if (this._diagModeActive) this._toggleDiagonalMode();
+}
+
+/**
+ * Sale del modo selección múltiple.
+ * @param {boolean} deleted - true si se acaba de ejecutar la eliminación
+ */
+_exitMultiSelectBeamsMode(deleted) {
+  this._multiSelectModeActive = false;
+
+  // Quitar outlines de todas las vigas seleccionadas
+  this._clearMultiSelectOutlines();
+  this._multiSelectedBeams = [];
+
+  // Actualizar botón del menú → texto original
+  this._updateMultiSelectBtn();
+
+  // Ocultar flotante y toast
+  this._updateMultiSelectFloat();
+  this._setMultiSelectToastVisible(false);
+
+  if (!deleted) {
+    this.showNotification('Selección múltiple cancelada.', 'info');
+  }
+}
+
+/**
+ * Maneja el tap sobre una viga en modo selección múltiple.
+ * - Si la viga NO estaba seleccionada: la selecciona (añade outline rojo).
+ * - Si la viga YA estaba seleccionada: la deselecciona individualmente
+ *   (el usuario puede corregir sin perder el resto de la selección).
+ */
+_handleMultiSelectBeamTap(hit) {
+  if (!hit || !hit.mesh) return;
+
+  const ek = this._edgeKeyFromBeamInfo(
+    hit.mesh.userData && hit.mesh.userData.beamInfo ? hit.mesh.userData.beamInfo : null
+  );
+  if (!ek) return;
+
+  // Buscar si ya estaba seleccionada
+  const existingIdx = this._multiSelectedBeams.findIndex(s => s.edgeKey === ek);
+
+  if (existingIdx !== -1) {
+    // Ya estaba seleccionada → deseleccionar SOLO esa viga
+    const removed = this._multiSelectedBeams.splice(existingIdx, 1)[0];
+    try {
+      if (removed.outlineMesh) {
+        if (removed.outlineMesh.parent) removed.outlineMesh.parent.remove(removed.outlineMesh);
+        if (removed.outlineMesh.geometry) removed.outlineMesh.geometry.dispose();
+        if (removed.outlineMesh.material) removed.outlineMesh.material.dispose();
+      }
+    } catch (e) { /* noop */ }
+    if (this.sceneManager) this.sceneManager.markDirty();
+  } else {
+    // No estaba → agregar a selección
+    const outlineMesh = this._createBeamSelectionOutline(hit.mesh);
+    this._multiSelectedBeams.push({ mesh: hit.mesh, edgeKey: ek, outlineMesh });
+  }
+
+  // Actualizar botón flotante (count + visibilidad)
+  this._updateMultiSelectFloat();
+}
+
+/**
+ * Crea un outline rojo para indicar que una viga está seleccionada.
+ * Retorna el outline mesh (ya añadido como hijo del beam mesh).
+ */
+_createBeamSelectionOutline(mesh) {
+  if (!mesh || !mesh.geometry) return null;
+  try {
+    const edges = new THREE.EdgesGeometry(mesh.geometry);
+    const mat = new THREE.LineBasicMaterial({
+      color: 0xffd700,
+      transparent: true,
+      opacity: 0.95,
+      depthTest: false,
+      depthWrite: false,
+    });
+    const outline = new THREE.LineSegments(edges, mat);
+    outline.name = 'zvMultiSelectOutline';
+    outline.renderOrder = 9998;
+    outline.frustumCulled = false;
+    mesh.add(outline);
+    if (this.sceneManager) this.sceneManager.markDirty();
+    return outline;
+  } catch (e) {
+    return null;
+  }
+}
+
+/**
+ * Quita todos los outlines de selección múltiple de los meshes.
+ */
+_clearMultiSelectOutlines() {
+  for (const s of this._multiSelectedBeams) {
+    try {
+      if (s.outlineMesh) {
+        if (s.outlineMesh.parent) s.outlineMesh.parent.remove(s.outlineMesh);
+        if (s.outlineMesh.geometry) s.outlineMesh.geometry.dispose();
+        if (s.outlineMesh.material) s.outlineMesh.material.dispose();
+      }
+    } catch (e) { /* noop */ }
+  }
+  if (this.sceneManager) this.sceneManager.markDirty();
+}
+
+/**
+ * Ejecuta la eliminación de todas las vigas seleccionadas y sale del modo.
+ */
+_deleteMultiSelectedBeams() {
+  if (!this._multiSelectedBeams.length) return;
+  if (!state.structureParams) return;
+
+  const keys = this._multiSelectedBeams.map(s => s.edgeKey).filter(Boolean);
+  if (!keys.length) return;
+
+  // Quitar outlines antes de regenerar (para evitar referencias a meshes destruidos)
+  this._clearMultiSelectOutlines();
+
+  if (!Array.isArray(state.structureDeletedBeams)) state.structureDeletedBeams = [];
+  for (const ek of keys) {
+    if (state.structureDeletedBeams.indexOf(ek) === -1) {
+      state.structureDeletedBeams.push(ek);
+    }
+  }
+
+  const n = keys.length;
+  try {
+    this.sceneManager.generateConnectorStructure(state.structureParams);
+    this._maybeShowStructureWarnings();
+  } catch (err) {
+    console.error(err);
+    this.showNotification('Error al eliminar las vigas seleccionadas.', 'error');
+    this._multiSelectedBeams = [];
+    this._exitMultiSelectBeamsMode(false);
+    return;
+  }
+
+  this._multiSelectedBeams = [];
+  this._exitMultiSelectBeamsMode(true);
+  this.showNotification(`${n} viga${n !== 1 ? 's' : ''} eliminada${n !== 1 ? 's' : ''}.`, 'success');
+}
+
+/** Actualiza el texto y estilo del botón del menú según el modo activo. */
+_updateMultiSelectBtn() {
+  if (!this.multiSelectBeamsBtn || !this.multiSelectBeamsBtnLabel) return;
+  if (this._multiSelectModeActive) {
+    this.multiSelectBeamsBtnLabel.textContent = 'Cancelar';
+    this.multiSelectBeamsBtn.classList.add('zv-multiselect-active');
+  } else {
+    this.multiSelectBeamsBtnLabel.textContent = 'Selección múltiple';
+    this.multiSelectBeamsBtn.classList.remove('zv-multiselect-active');
+  }
+}
+
+/** Crea el botón flotante "Eliminar selección" si no existe. */
+_ensureMultiSelectFloat() {
+  if (this._multiSelectFloatEl) return;
+
+  const btn = document.createElement('button');
+  btn.id = 'zvMultiSelectFloatBtn';
+  btn.className = 'zv-multiselect-float zv-hidden';
+  btn.type = 'button';
+  btn.innerHTML = `
+    <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+      <polyline points="3 6 5 6 21 6"></polyline>
+      <path d="M19 6l-1 14H6L5 6"></path>
+      <path d="M10 11v6M14 11v6"></path>
+    </svg>
+    Eliminar selección
+    <span class="zv-multiselect-count" id="zvMultiSelectCount">0</span>
+  `;
+  btn.addEventListener('click', () => {
+    if (this._multiSelectedBeams.length === 0) return;
+    this._deleteMultiSelectedBeams();
+  });
+  document.body.appendChild(btn);
+  this._multiSelectFloatEl = btn;
+  this._multiSelectCountEl = btn.querySelector('#zvMultiSelectCount');
+}
+
+/** Actualiza visibilidad y count del botón flotante. */
+_updateMultiSelectFloat() {
+  this._ensureMultiSelectFloat();
+  if (!this._multiSelectFloatEl) return;
+
+  const count = this._multiSelectedBeams.length;
+  const shouldShow = this._multiSelectModeActive && count > 0;
+
+  this._multiSelectFloatEl.classList.toggle('zv-hidden', !shouldShow);
+  if (this._multiSelectCountEl) {
+    this._multiSelectCountEl.textContent = String(count);
+  }
+}
+
+/** Crea el toast informativo si no existe. */
+_ensureMultiSelectToast() {
+  if (this._multiSelectToastEl) return;
+  const el = document.createElement('div');
+  el.id = 'zvMultiSelectToast';
+  el.className = 'zv-multiselect-toast zv-hidden';
+  el.innerHTML = 'Toca vigas para seleccionarlas<br>Toca una seleccionada para quitarla';
+  document.body.appendChild(el);
+  this._multiSelectToastEl = el;
+}
+
+/** Muestra u oculta el toast. */
+_setMultiSelectToastVisible(visible) {
+  this._ensureMultiSelectToast();
+  if (!this._multiSelectToastEl) return;
+  this._multiSelectToastEl.classList.toggle('zv-hidden', !visible);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 _handleDiagonalConnectorTap(hit) {
   if (!hit || !hit.mesh) return;
 
@@ -708,27 +978,35 @@ _handleDiagonalConnectorTap(hit) {
   }
 
 
-  // ✅ Caso especial: si el usuario eliminó una viga (arista o extra) y ahora selecciona
-  // exactamente los mismos 2 conectores, restauramos la viga removiéndola del blacklist
-  // incluso si no pertenecen a un rombo visible (por ejemplo, arista en triángulo del corte).
+  // ✅ Caso especial: si el usuario eliminó una viga (arista, diagonal o tramo con conector central)
+  // y ahora selecciona exactamente los mismos 2 conectores, restauramos la viga removiéndola del
+  // blacklist (structureDeletedBeams). Esto funciona incluso con conectores centrales "X".
   try {
     if (Array.isArray(state.structureDeletedBeams) && state.structureDeletedBeams.length && state.structureParams) {
-      const keyFor = (k, i) => {
-        k = Number(k);
+      const keyForHit = (h) => {
+        const ci = h && h.mesh && h.mesh.userData && h.mesh.userData.connectorInfo ? h.mesh.userData.connectorInfo : null;
+        const k = ci && isFinite(ci.kOriginal) ? Number(ci.kOriginal) : Number(h.kOriginal);
+        const i = ci && isFinite(ci.i) ? Number(ci.i) : Number(h.i);
+
+        // Conector central/interseccion (X)
+        if (ci && typeof ci.id === 'string' && ci.id.indexOf('X') === 0) {
+          // Debe coincidir con StructureGenerator: X:<kOriginal>:<iFace>
+          return `X:${k}:${i}`;
+        }
+
         if (!isFinite(k)) return null;
         if (k === 0) return 'pole_low';
         if (k === state.N) return 'pole_top';
-        return 'k' + k + '_i' + i;
+        return `k${k}_i${i}`;
       };
-      const aKey = keyFor(a.kOriginal, a.i);
-      const bKey = keyFor(b.kOriginal, b.i);
+
+      const aKey = keyForHit(a);
+      const bKey = keyForHit(b);
       if (aKey && bKey && aKey !== bKey) {
         const ek = (aKey < bKey) ? (aKey + '|' + bKey) : (bKey + '|' + aKey);
         const idx = state.structureDeletedBeams.indexOf(ek);
         if (idx !== -1) {
           state.structureDeletedBeams.splice(idx, 1);
-          // Regenerar estructura: la viga restaurada recupera sus datos originales
-          // (o los de la viga extra correspondiente si existía en structureExtraBeams).
           this.sceneManager.generateConnectorStructure({ ...state.structureParams });
           this._maybeShowStructureWarnings();
           this.showNotification('Viga restaurada.', 'success');
@@ -938,23 +1216,89 @@ _openDiagonalModal(face) {
   const hasH = extra.some(it => it && it.kind === 'diagH' && it.a && it.b && keyOf(it.a, it.b) === hKey);
   const hasV = extra.some(it => it && it.kind === 'diagV' && it.a && it.b && keyOf(it.a, it.b) === vKey);
 
+  // ✅ Detectar si hay tramos/diagonales eliminados para este rombo.
+  // Si existen eliminaciones, permitimos "restaurar" una diagonal aunque ya exista en structureExtraBeams.
+  const deleted = Array.isArray(state.structureDeletedBeams) ? state.structureDeletedBeams : [];
+  const deletedSet = new Set(deleted);
+  const edgeKey2 = (aKey, bKey) => (aKey < bKey) ? `${aKey}|${bKey}` : `${bKey}|${aKey}`;
+  const vKey2 = (k, i) => {
+    k = Number(k);
+    i = Number(i);
+    if (k === 0) return 'pole_low';
+    if (k === state.N) return 'pole_top';
+    return `k${k}_i${i}`;
+  };
+  const faceId = `${face.kFace}:${face.iFace}`;
+  const intersectionFaces = state.structureIntersectionFaces || {};
+  const hasCross = !!intersectionFaces[faceId] && hasH && hasV;
+  const xKey = `X:${face.kFace}:${face.iFace}`;
+
+  const lKey = vKey2(face.diagH.a.k, face.diagH.a.i);
+  const rKey = vKey2(face.diagH.b.k, face.diagH.b.i);
+  const bKey = vKey2(face.diagV.a.k, face.diagV.a.i);
+  const tKey = vKey2(face.diagV.b.k, face.diagV.b.i);
+
+  const missingH = hasCross
+    ? (deletedSet.has(edgeKey2(lKey, xKey)) || deletedSet.has(edgeKey2(xKey, rKey)) || deletedSet.has(edgeKey2(lKey, rKey)))
+    : deletedSet.has(edgeKey2(lKey, rKey));
+  const missingV = hasCross
+    ? (deletedSet.has(edgeKey2(bKey, xKey)) || deletedSet.has(edgeKey2(xKey, tKey)) || deletedSet.has(edgeKey2(bKey, tKey)))
+    : deletedSet.has(edgeKey2(bKey, tKey));
+
+  const selKey = (selA && selB) ? keyOf(selA, selB) : null;
+  const selIsDiagH = !!selKey && selKey === hKey;
+  const selIsDiagV = !!selKey && selKey === vKey;
+
   if (rH) rH.disabled = false;
   if (rV) rV.disabled = false;
 
   if (hasH && !hasV) {
-    if (rH) rH.disabled = true;
-    if (rV) rV.checked = true;
-    if (sub) sub.textContent = `${face.label}. Ya existe diagonal horizontal; puedes crear la vertical, o una arista (si corresponde).`;
+    if (!missingH) {
+      if (rH) rH.disabled = true;
+      if (rV) rV.checked = true;
+      if (sub) sub.textContent = `${face.label}. Ya existe diagonal horizontal; puedes crear la vertical, o una arista (si corresponde).`;
+    } else {
+      // Hay eliminaciones: permitir restaurar diagonal horizontal.
+      if (rH) rH.disabled = false;
+      if (rV) rV.disabled = false;
+      if (rH && selIsDiagH) rH.checked = true;
+      else if (rV) rV.checked = true;
+      if (sub) sub.textContent = `${face.label}. Diagonal horizontal existe pero tiene tramos eliminados; puedes restaurarla o crear la vertical.`;
+    }
   } else if (hasV && !hasH) {
-    if (rV) rV.disabled = true;
-    if (rH) rH.checked = true;
-    if (sub) sub.textContent = `${face.label}. Ya existe diagonal vertical; puedes crear la horizontal, o una arista (si corresponde).`;
+    if (!missingV) {
+      if (rV) rV.disabled = true;
+      if (rH) rH.checked = true;
+      if (sub) sub.textContent = `${face.label}. Ya existe diagonal vertical; puedes crear la horizontal, o una arista (si corresponde).`;
+    } else {
+      // Hay eliminaciones: permitir restaurar diagonal vertical.
+      if (rH) rH.disabled = false;
+      if (rV) rV.disabled = false;
+      if (rV && selIsDiagV) rV.checked = true;
+      else if (rH) rH.checked = true;
+      if (sub) sub.textContent = `${face.label}. Diagonal vertical existe pero tiene tramos eliminados; puedes restaurarla o crear la horizontal.`;
+    }
   } else if (hasH && hasV) {
     // Ya estan ambas; no tiene sentido abrir modal para diagonales.
     // Pero igual podríamos permitir aristas. Si no es arista, avisar.
     if (!selEdgeId) {
-      this.showNotification('Este rombo ya tiene diagonal horizontal y vertical.', 'error');
-      this._diagModalFace = null;
+      if (!(missingH || missingV)) {
+        this.showNotification('Este rombo ya tiene diagonal horizontal y vertical.', 'error');
+        this._diagModalFace = null;
+        return;
+      }
+      // Hay eliminaciones: permitir restaurar.
+      if (rEdge) rEdge.disabled = true;
+      if (rH) rH.disabled = !missingH;
+      if (rV) rV.disabled = !missingV;
+      // Priorizar la restauración según la selección del usuario.
+      if (missingH && selIsDiagH && rH) rH.checked = true;
+      else if (missingV && selIsDiagV && rV) rV.checked = true;
+      else if (missingH && rH) rH.checked = true;
+      else if (missingV && rV) rV.checked = true;
+      else if (rH) rH.checked = true;
+      if (sub) sub.textContent = `${face.label}. Este rombo ya tiene ambas diagonales, pero hay tramos eliminados; puedes restaurar la diagonal faltante.`;
+      this._diagModalEl.classList.remove('zv-hidden');
       return;
     }
     if (rEdge) rEdge.checked = true;
@@ -967,7 +1311,14 @@ _openDiagonalModal(face) {
       if (rEdge) rEdge.checked = true;
       if (sub) sub.textContent = `${face.label}. Puedes crear arista o diagonal.`;
     } else {
-      if (rH) rH.checked = true;
+      // Si la selección coincide exactamente con una diagonal del rombo, preseleccionarla.
+      if (selIsDiagV && rV && !rV.disabled) {
+        rV.checked = true;
+      } else if (selIsDiagH && rH && !rH.disabled) {
+        rH.checked = true;
+      } else {
+        if (rH) rH.checked = true;
+      }
       if (sub) sub.textContent = `${face.label}. Seleccion no es una arista; puedes crear diagonal.`;
     }
   }
@@ -1075,6 +1426,27 @@ try {
     // Si la viga estaba eliminada antes, restaurarla (mismo nombre deterministico)
     removeFromDeletedIfExists(a, b, aId, bId);
 
+    // Si el rombo tiene (o tendrá) cruce con conector central (X),
+    // la diagonal se dibuja como 2 tramos (a<->X y X<->b). Si esos tramos
+    // fueron eliminados antes, restaurarlos aquí para que al "Aplicar"
+    // realmente aparezca la diagonal en 3D.
+    if (meta.kind === 'diagH' || meta.kind === 'diagV') {
+      const cross = !!faceId && (
+        (oppositeEdgeKey && has.has(oppositeEdgeKey)) ||
+        (intersectionFaces && intersectionFaces[faceId])
+      );
+      if (cross && faceId) {
+        const parts = String(faceId).split(':');
+        const kF = Number(parts[0]);
+        const iF = Number(parts[1]);
+        if (isFinite(kF) && isFinite(iF)) {
+          const vX = { k: kF, i: iF };
+          removeFromDeletedIfExists(a, vX, null, 'X');
+          removeFromDeletedIfExists(vX, b, 'X', null);
+        }
+      }
+    }
+
     extra.push({ a: { k: a.k, i: a.i }, b: { k: b.k, i: b.i }, kind: meta.kind || 'extra', scope: meta.scope || 'one', edgeSel: meta.edgeSel || null });
 
     // Si el rombo ya tenia la diagonal opuesta, entonces esta es la 2da diagonal: habilitar conector central.
@@ -1167,23 +1539,98 @@ try {
   if (!face.diagH || !face.diagV) return;
   const target = (kind === 'diagV') ? face.diagV : face.diagH;
   const opposite = (kind === 'diagV') ? face.diagH : face.diagV;
+  const oppositeKind = (kind === 'diagV') ? 'diagH' : 'diagV';
+
+  // Helper: restaurar tramos/diagonal eliminados para un rombo específico.
+  const _restoreDiagonalForFace = (f, faceId, knd, oppExists) => {
+    if (!Array.isArray(state.structureDeletedBeams) || state.structureDeletedBeams.length === 0) return false;
+    const before = state.structureDeletedBeams.length;
+
+    // Siempre intentar restaurar la diagonal directa (a<->b)
+    removeFromDeletedIfExists(f.a, f.b, null, null);
+
+    // Si existe la diagonal opuesta, este rombo puede tener conector central X y 2 tramos.
+    if (oppExists) {
+      const vX = { k: Number(face.kFace), i: Number(face.iFace) };
+      // Tramo 1: a <-> X
+      removeFromDeletedIfExists(f.a, vX, null, 'X');
+      // Tramo 2: X <-> b
+      removeFromDeletedIfExists(vX, f.b, 'X', null);
+
+      // Asegurar marca de intersección si ambas diagonales existen.
+      if (!state.structureIntersectionFaces) state.structureIntersectionFaces = {};
+      state.structureIntersectionFaces[faceId] = true;
+    }
+
+    return state.structureDeletedBeams.length < before;
+  };
+
+  // Para notificar: en scopes "nivel"/"todos" puede que no haya cambios.
+  let anyChange = 0;
 
   if (scope === 'one') {
     const faceId = `${face.kFace}:${face.iFace}`;
     const oppKey = keyOf(opposite.a, opposite.b);
-    const ok = addEdge(target.a, target.b, { kind, scope: 'one' }, faceId, oppKey, null, null);
-    if (!ok) {
-      this.showNotification('Ya existe una viga en esa diagonal (o no se puede duplicar).', 'error');
-      return;
+    const diagKey = keyOf(target.a, target.b);
+    const already = extra.some(it => it && it.kind === kind && it.a && it.b && keyOf(it.a, it.b) === diagKey);
+    const oppExists = extra.some(it => it && it.kind === oppositeKind && it.a && it.b && keyOf(it.a, it.b) === oppKey);
+
+    if (already) {
+      // ✅ Restaurar si había tramos/diagonal eliminados.
+      const restored = _restoreDiagonalForFace(target, faceId, kind, oppExists);
+      if (!restored) {
+        this.showNotification('Este rombo ya tiene esa diagonal y no hay tramos eliminados para restaurar.', 'error');
+        return;
+      }
+      anyChange++;
+    } else {
+      const ok = addEdge(target.a, target.b, { kind, scope: 'one' }, faceId, oppKey, null, null);
+      if (!ok) {
+        this.showNotification('Ya existe una viga en esa diagonal (o no se puede duplicar).', 'error');
+        return;
+      }
+      anyChange++;
     }
   } else {
     const { N, cutActive, cutLevel } = state;
     const startK = cutActive ? cutLevel : 1;
     const applyAllLevels = (scope === 'all');
+
+    // El rombo seleccionado debe poder "forzar" restauración incluso si estaba suprimido.
+    const selectedFaceId = `${face.kFace}:${face.iFace}`;
+
+    // Si el usuario eliminó tramos en un rombo, NO los reponemos automáticamente al aplicar "en todos".
+    const isSuppressed = (k, i, knd) => {
+      if (!Array.isArray(state.structureDeletedBeams) || state.structureDeletedBeams.length === 0) return false;
+      const del = new Set(state.structureDeletedBeams);
+      // Construir llaves de vertices (incluye posibilidad de X)
+      let idxL, idxR;
+      if (k % 2 === 1) { idxL = i; idxR = (i + 1) % N; }
+      else { idxL = (i - 1 + N) % N; idxR = i; }
+      const lKey = vKey(k, idxL, null);
+      const rKey = vKey(k, idxR, null);
+      const bKey = vKey(k - 1, i, null);
+      const tKey = vKey(k + 1, i, null);
+      const xKey = vKey(k, i, 'X');
+
+      // ⚠️ Importante: usar el mismo formateo determinístico de keys.
+      // Aquí no existía edgeKey() (bug), lo que hacía que "Aplicar" no funcionara en scope nivel/todos.
+      if (knd === 'diagH') {
+        return del.has(edgeKey2(lKey, rKey)) || del.has(edgeKey2(lKey, xKey)) || del.has(edgeKey2(xKey, rKey));
+      }
+      return del.has(edgeKey2(bKey, tKey)) || del.has(edgeKey2(bKey, xKey)) || del.has(edgeKey2(xKey, tKey));
+    };
+
     for (let k = startK; k <= N - 1; k++) {
       if (!applyAllLevels && k !== face.kFace) continue;
       if (cutActive && k === cutLevel) continue;
       for (let i = 0; i < N; i++) {
+        const faceId = `${k}:${i}`;
+        const suppressed = isSuppressed(k, i, kind);
+        if (suppressed && faceId !== selectedFaceId) {
+          // Respetar aperturas/vanos hechos por el usuario (excepto el rombo tocado).
+          continue;
+        }
         let idxL, idxR;
         if (k % 2 === 1) {
           idxL = i;
@@ -1198,9 +1645,22 @@ try {
         const vTop = { k: k + 1, i };
         const t = (kind === 'diagV') ? { a: vBottom, b: vTop } : { a: vLeft, b: vRight };
         const o = (kind === 'diagV') ? { a: vLeft, b: vRight } : { a: vBottom, b: vTop };
-        const faceId = `${k}:${i}`;
         const oppKey = keyOf(o.a, o.b);
-        addEdge(t.a, t.b, { kind, scope }, faceId, oppKey, null, null);
+
+        // Si es el rombo seleccionado y la diagonal ya existe, intentar restaurar.
+        if (faceId === selectedFaceId) {
+          const diagKey = keyOf(t.a, t.b);
+          const alreadyHere = extra.some(it => it && it.kind === kind && it.a && it.b && keyOf(it.a, it.b) === diagKey);
+          const oppExists = extra.some(it => it && it.kind === oppositeKind && it.a && it.b && keyOf(it.a, it.b) === oppKey);
+          if (alreadyHere) {
+            const restored = _restoreDiagonalForFace(t, faceId, kind, oppExists);
+            if (restored) anyChange++;
+            continue;
+          }
+        }
+
+        const ok = addEdge(t.a, t.b, { kind, scope }, faceId, oppKey, null, null);
+        if (ok) anyChange++;
       }
     }
   }
@@ -1218,7 +1678,11 @@ try {
     return;
   }
 
-  this.showNotification('Viga extra aplicada.', 'success');
+  if (anyChange <= 0) {
+    this.showNotification('No se realizaron cambios: está suprimido por eliminaciones. Para restaurar, toca el rombo y usa "Solo esta seleccion".', 'info');
+  } else {
+    this.showNotification('Viga extra aplicada.', 'success');
+  }
 }
 
 
@@ -1320,11 +1784,63 @@ _updateConnectorTooltipPosition() {
     const w = (hit.widthMm != null) ? Math.round(hit.widthMm) : null;
     const h = (hit.heightMm != null) ? Math.round(hit.heightMm) : null;
 
+    // Info completa desde el mesh (extremos, largo, etc.)
+    const bi = (hit.mesh && hit.mesh.userData && hit.mesh.userData.beamInfo) ? hit.mesh.userData.beamInfo : null;
+
+    const safeVec = (v) => (v && v.isVector3) ? v : null;
+    const distMm = (a, b) => {
+      if (!a || !b) return null;
+      const d = a.distanceTo(b);
+      return isFinite(d) ? Math.round(d * 1000) : null;
+    };
+
+    const lenMm = (bi && isFinite(Number(bi.lenMm))) ? Math.round(Number(bi.lenMm))
+      : distMm(safeVec(bi && bi.a ? bi.a.pos : null), safeVec(bi && bi.b ? bi.b.pos : null));
+
+    const nodeLenMm = (bi && isFinite(Number(bi.nodeLenMm))) ? Math.round(Number(bi.nodeLenMm))
+      : distMm(safeVec(bi && bi.a ? bi.a.nodePos : null), safeVec(bi && bi.b ? bi.b.nodePos : null));
+
+    const aEnd = (bi && bi.a) ? bi.a : null;
+    const bEnd = (bi && bi.b) ? bi.b : null;
+
+    let aName = (aEnd && aEnd.name) ? aEnd.name : null;
+    let bName = (bEnd && bEnd.name) ? bEnd.name : null;
+
+    // Ordenar "abajo → arriba" usando datos reales del conector:
+    // 1) k (nivel original), 2) z (altura del nodo), 3) i (índice estable).
+    const _rankEnd = (end) => {
+      const k = (end && Number.isFinite(end.k)) ? Number(end.k) : null;
+      const np = safeVec(end && end.nodePos ? end.nodePos : null);
+      const pp = safeVec(end && end.pos ? end.pos : null);
+      const z = (np && Number.isFinite(np.z)) ? np.z : ((pp && Number.isFinite(pp.z)) ? pp.z : null);
+      const i = (end && Number.isFinite(end.i)) ? Number(end.i) : null;
+      return { k, z, i };
+    };
+
+    const ra = _rankEnd(aEnd);
+    const rb = _rankEnd(bEnd);
+
+    const shouldSwap =
+      (ra.k != null && rb.k != null && ra.k !== rb.k) ? (ra.k > rb.k) :
+      (ra.z != null && rb.z != null && Math.abs(ra.z - rb.z) > 1e-9) ? (ra.z > rb.z) :
+      (ra.i != null && rb.i != null && ra.i !== rb.i) ? (ra.i > rb.i) :
+      false;
+
+    if (shouldSwap) {
+      const tmp = aName; aName = bName; bName = tmp;
+    }
+
     if (this._beamTooltipTitle) {
-      this._beamTooltipTitle.textContent = `Viga k${kv}${(w!=null&&h!=null)?` (${w}×${h} mm)`:''}`;
+      const wh = (w!=null && h!=null) ? ` (${w}×${h} mm)` : '';
+      const L = (lenMm!=null) ? `  L=${lenMm} mm` : '';
+      this._beamTooltipTitle.textContent = `Viga k${kv}${wh}${L}`;
     }
     if (this._beamTooltipSub) {
-      this._beamTooltipSub.textContent = 'Toca nuevamente para editar (aplica al nivel)';
+      const nn = (nodeLenMm!=null) ? `Nodo–Nodo: ${nodeLenMm} mm` : null;
+      const cn = (aName && bName) ? `Conecta: ${aName} ↔ ${bName}` : null;
+      const info = [cn, nn].filter(Boolean).join(' · ');
+      const hint = '2º toque: editar (aplica al nivel)';
+      this._beamTooltipSub.textContent = info ? `${info} — ${hint}` : hint;
     }
 
     this._beamTooltipHit = hit;
@@ -1463,11 +1979,16 @@ _updateConnectorTooltipPosition() {
     btnDelete.className = 'zv-btn zv-btn-danger';
     btnDelete.textContent = 'Eliminar viga';
 
+    const btnView = document.createElement('button');
+    btnView.className = 'zv-btn zv-btn-secondary';
+    btnView.textContent = 'Ver viga';
+
     const btnApply = document.createElement('button');
     btnApply.className = 'zv-btn zv-btn-primary';
     btnApply.textContent = 'Aplicar';
 
     footer.appendChild(btnCancel);
+    footer.appendChild(btnView);
     footer.appendChild(btnDelete);
     footer.appendChild(btnApply);
 
@@ -1482,6 +2003,7 @@ _updateConnectorTooltipPosition() {
     btnApply.addEventListener('click', () => this._applyBeamEditModal());
     btnRestore.addEventListener('click', () => this._restoreBeamEditModal());
     btnDelete.addEventListener('click', () => this._deleteSelectedBeamFromModal());
+    btnView.addEventListener('click', () => this._openBeamViewerFromEditModal());
 
     // Usar AbortController para poder remover el listener al destruir el modal
     this._beamModalAbortCtrl = new AbortController();
@@ -1493,6 +2015,7 @@ _updateConnectorTooltipPosition() {
 
     this._beamModalOverlay = overlay;
     this._beamModalDeleteBtn = btnDelete;
+    this._beamModalViewBtn = btnView;
     this._beamModalApplyBtn = btnApply;
     this._beamModalRestoreBtn = btnRestore;
   }
@@ -1512,6 +2035,614 @@ _updateConnectorTooltipPosition() {
     // también ocultar tooltip si estaba visible
     try { this._hideBeamTooltip(true); } catch (e) {}
   }
+
+
+
+  _openBeamViewerFromEditModal() {
+    const hit = this._beamEditHit;
+    if (!hit || !hit.mesh) return;
+    // Ocultar modal de edición (pero mantener el estado) y abrir visor aislado
+    if (this._beamModalOverlay) this._beamModalOverlay.classList.add('zv-hidden');
+    this._beamViewerReturnToEdit = true;
+    this._openBeamViewerModal(hit);
+  }
+
+  _initBeamViewerModal() {
+    if (this._beamViewerOverlay) return;
+
+    const overlay = document.createElement('div');
+    overlay.className = 'zv-modal-overlay zv-hidden';
+    overlay.id = 'beamViewerOverlay';
+
+    const modal = document.createElement('div');
+    modal.className = 'zv-modal zv-modal-wide';
+    overlay.appendChild(modal);
+
+    const header = document.createElement('div');
+    header.className = 'zv-beamviewer-header';
+
+    const titleWrap = document.createElement('div');
+    titleWrap.className = 'zv-beamviewer-titlewrap';
+
+    const title = document.createElement('div');
+    title.className = 'zv-modal-title zv-beamviewer-title';
+    title.textContent = 'Viga';
+    titleWrap.appendChild(title);
+
+    const subtitle = document.createElement('div');
+    subtitle.className = 'zv-modal-subtitle zv-beamviewer-subtitle';
+    subtitle.textContent = '';
+    titleWrap.appendChild(subtitle);
+
+    const btnClose = document.createElement('button');
+    btnClose.className = 'zv-btn zv-btn-secondary zv-beamviewer-close';
+    btnClose.textContent = 'Cerrar';
+
+    header.appendChild(titleWrap);
+    header.appendChild(btnClose);
+    modal.appendChild(header);
+
+    const toolbar = document.createElement('div');
+    toolbar.className = 'zv-beamviewer-toolbar';
+
+    const mkBtn = (label) => {
+      const b = document.createElement('button');
+      b.className = 'zv-btn zv-btn-secondary zv-beamviewer-viewbtn';
+      b.textContent = label;
+      return b;
+    };
+
+    const btnPlan = mkBtn('Planta');
+    const btnSide = mkBtn('Lateral');
+    const btnIso = mkBtn('Isométrica');
+    const btnFree = mkBtn('Rotación libre');
+    const btnConn = mkBtn('Mostrar conectores');
+
+    const spacer = document.createElement('div');
+    spacer.className = 'zv-beamviewer-spacer';
+
+    const btnPdf = document.createElement('button');
+    btnPdf.className = 'zv-btn zv-btn-primary';
+    btnPdf.textContent = 'Descargar PDF';
+
+    toolbar.appendChild(btnPlan);
+    toolbar.appendChild(btnSide);
+    toolbar.appendChild(btnIso);
+    toolbar.appendChild(btnFree);
+    toolbar.appendChild(btnConn);
+    toolbar.appendChild(spacer);
+    toolbar.appendChild(btnPdf);
+
+    modal.appendChild(toolbar);
+
+    const body = document.createElement('div');
+    body.className = 'zv-beamviewer-body';
+
+    const canvas = document.createElement('canvas');
+    canvas.className = 'zv-beamviewer-canvas';
+    canvas.setAttribute('aria-label', 'Visor de viga');
+    body.appendChild(canvas);
+
+    modal.appendChild(body);
+
+    document.body.appendChild(overlay);
+
+    const close = () => this._closeBeamViewerModal();
+
+    overlay.addEventListener('pointerdown', (e) => {
+      if (e.target === overlay) close();
+    });
+    btnClose.addEventListener('click', close);
+
+    // View buttons
+    btnPlan.addEventListener('click', () => this._beamViewerSetView('plan'));
+    btnSide.addEventListener('click', () => this._beamViewerSetView('side'));
+    btnIso.addEventListener('click', () => this._beamViewerSetView('iso'));
+    btnFree.addEventListener('click', () => this._beamViewerSetView('free'));
+    btnConn.addEventListener('click', () => this._beamViewerToggleConnectors());
+
+    btnPdf.addEventListener('click', async () => {
+      const hit = this._beamViewerHit;
+      if (!hit || !hit.mesh) return;
+      try {
+        this.showNotification('Generando PDF de la viga...', 'info');
+        await new Promise(r => setTimeout(r, 120));
+        await BeamPDFReporter.generateSingleBeamReport(hit.mesh, this.sceneManager);
+        this.showNotification('PDF generado', 'success');
+      } catch (err) {
+        console.error(err);
+        this.showNotification('Error generando PDF de la viga', 'error');
+      }
+    });
+
+    // Keydown (Esc)
+    this._beamViewerAbortCtrl = new AbortController();
+    document.addEventListener('keydown', (e) => {
+      if (overlay.classList.contains('zv-hidden')) return;
+      if (e.key === 'Escape') close();
+    }, { signal: this._beamViewerAbortCtrl.signal });
+
+    // Refs
+    this._beamViewerOverlay = overlay;
+    this._beamViewerCanvas = canvas;
+    this._beamViewerTitleEl = title;
+    this._beamViewerSubtitleEl = subtitle;
+    this._beamViewerBtnPlan = btnPlan;
+    this._beamViewerBtnSide = btnSide;
+    this._beamViewerBtnIso = btnIso;
+    this._beamViewerBtnFree = btnFree;
+    this._beamViewerBtnConn = btnConn;
+    this._beamViewerBtnPdf = btnPdf;
+
+    // Resize handler (solo mientras esté abierto)
+    this._beamViewerResizeHandler = () => {
+      if (!this._beamViewerOverlay || this._beamViewerOverlay.classList.contains('zv-hidden')) return;
+      this._beamViewerResize();
+    };
+    window.addEventListener('resize', this._beamViewerResizeHandler);
+  }
+
+  _openBeamViewerModal(hit) {
+    if (!hit || !hit.mesh) return;
+    if (!this._beamViewerOverlay) this._initBeamViewerModal();
+
+    this._beamViewerHit = hit;
+    this._beamViewerReturnToEdit = !!this._beamViewerReturnToEdit;
+
+    // Título / subtítulo informativo
+    const mesh = hit.mesh;
+    const info = (mesh && mesh.userData && mesh.userData.beamInfo) ? mesh.userData.beamInfo : {};
+    const aName = info && info.a ? info.a.name : null;
+    const bName = info && info.b ? info.b.name : null;
+    const connectTxt = (aName && bName) ? `${aName} ↔ ${bName}` : '';
+    const lenMm = (mesh && typeof BeamPDFReporter._beamLengthWorld === 'function') ? Math.round(BeamPDFReporter._beamLengthWorld(mesh) * 1000) : null;
+
+    if (this._beamViewerTitleEl) this._beamViewerTitleEl.textContent = 'Ver viga (aislada)';
+    if (this._beamViewerSubtitleEl) {
+      this._beamViewerSubtitleEl.textContent = `${connectTxt}${lenMm != null ? `  •  L=${lenMm} mm` : ''}`;
+    }
+
+    // Construir escena del visor
+    try {
+      this._beamViewerBuild(mesh);
+      // Estado inicial: conectores ocultos
+      if (this._beamViewer) {
+        this._beamViewer.connectorsVisible = false;
+      }
+      if (this._beamViewerBtnConn) {
+        this._beamViewerBtnConn.textContent = 'Mostrar conectores';
+        this._beamViewerBtnConn.classList.remove('zv-btn-primary');
+        this._beamViewerBtnConn.classList.add('zv-btn-secondary');
+      }
+    } catch (err) {
+      console.error(err);
+      this.showNotification('No se pudo abrir el visor de la viga', 'error');
+      return;
+    }
+
+    this._beamViewerOverlay.classList.remove('zv-hidden');
+    // Vista por defecto: rotación libre
+    this._beamViewerSetView('free');
+    // Ajuste final a tamaño
+    this._beamViewerResize();
+  }
+
+  _closeBeamViewerModal() {
+    if (!this._beamViewerOverlay) return;
+    this._beamViewerOverlay.classList.add('zv-hidden');
+
+    // Liberar GPU / listeners del visor
+    try { this._beamViewerDispose(); } catch (e) {}
+
+    // Volver al modal de edición si veníamos desde ahí
+    const shouldReturn = !!this._beamViewerReturnToEdit;
+    this._beamViewerReturnToEdit = false;
+    if (shouldReturn && this._beamEditHit && this._beamModalOverlay) {
+      // Re-mostrar sin recalcular
+      this._beamModalOverlay.classList.remove('zv-hidden');
+      try {
+        if (this.sceneManager && typeof this.sceneManager.setSelectedBeam === 'function') {
+          this.sceneManager.setSelectedBeam(this._beamEditHit.mesh || null);
+        }
+      } catch (e) {}
+    }
+
+    this._beamViewerHit = null;
+  }
+
+  _beamViewerDispose() {
+    const v = this._beamViewer;
+    if (!v) return;
+
+    try {
+      if (v.controls) v.controls.dispose();
+    } catch (e) {}
+
+    try {
+      if (v.scene) {
+        v.scene.traverse((obj) => {
+          if (!obj) return;
+          if (obj.geometry && typeof obj.geometry.dispose === 'function') obj.geometry.dispose();
+          if (obj.material) {
+            if (Array.isArray(obj.material)) {
+              obj.material.forEach(m => m && m.dispose && m.dispose());
+            } else if (obj.material.dispose) {
+              obj.material.dispose();
+            }
+          }
+        });
+      }
+    } catch (e) {}
+
+    try {
+      if (v.renderer) v.renderer.dispose();
+    } catch (e) {}
+
+    this._beamViewer = null;
+  }
+
+  _beamViewerBuild(mesh) {
+    if (!mesh || !this._beamViewerCanvas) return;
+
+    // Re-crear (si existía)
+    if (this._beamViewer) this._beamViewerDispose();
+
+    const canvas = this._beamViewerCanvas;
+
+    const renderer = new THREE.WebGLRenderer({
+      canvas,
+      antialias: true,
+      alpha: true,
+      powerPreference: 'high-performance',
+      preserveDrawingBuffer: false,
+    });
+    renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+
+    const scene = new THREE.Scene();
+    scene.background = null;
+
+    // Luces
+    scene.add(new THREE.AmbientLight(0xffffff, 0.95));
+    const dir = new THREE.DirectionalLight(0xffffff, 0.85);
+    dir.position.set(2.2, -3.5, 4.2);
+    scene.add(dir);
+
+    // Construcción de la viga en sistema canónico (mismas transformaciones lineales que PDF)
+    const info = (mesh.userData && mesh.userData.beamInfo) ? mesh.userData.beamInfo : {};
+    const widthMm = Number.isFinite(info.widthMm) ? info.widthMm : null;
+    const heightMm = Number.isFinite(info.heightMm) ? info.heightMm : null;
+
+    const vertsW = BeamPDFReporter._getBeamVerticesWorld(mesh);
+    if (!vertsW) throw new Error('No se pudieron leer los vértices de la viga.');
+
+    // Inferir cara exterior si hay objFaces/objQuads (igual que PDF)
+    const eDir = (info && info.edgeDir && info.edgeDir.isVector3) ? info.edgeDir
+      : (info && info.a && info.b && info.a.pos && info.b.pos ? new THREE.Vector3().subVectors(info.b.pos, info.a.pos) : null);
+
+    const outer = BeamPDFReporter._inferOuterFaceFromObjFaces(mesh, info, vertsW, eDir);
+    if (outer) {
+      if (!info.faces) info.faces = {};
+      info.faces.outer = outer;
+    }
+
+    const basis = BeamPDFReporter._computeBeamBasis(vertsW, info, { widthMm, heightMm });
+    if (!basis) throw new Error('No se pudo calcular la base local de la viga.');
+
+    const pair = BeamPDFReporter._normalizeConnPair(info);
+    BeamPDFReporter._ensureBasisDirectionByLevels(basis, info, pair);
+
+    // Matriz mundo->canónico (x=e, y=w, z=t) y centrado en el centroide
+    const mBasis = new THREE.Matrix4().makeBasis(basis.e, basis.w, basis.t);
+    const mInv = mBasis.clone().invert();
+    const mT = new THREE.Matrix4().makeTranslation(-basis.c.x, -basis.c.y, -basis.c.z);
+    const mWorldToCanon = mInv.clone().multiply(mT);
+
+    // Clonar geometría y llevarla a mundo antes de canonizar
+    const geom = mesh.geometry.clone();
+    // Asegurar matrixWorld actualizada (por seguridad)
+    try { mesh.updateWorldMatrix(true, false); } catch (e) {}
+    // Transformación a mundo (por seguridad)
+    try { geom.applyMatrix4(mesh.matrixWorld); } catch (e) {}
+    geom.applyMatrix4(mWorldToCanon);
+    geom.computeBoundingBox();
+    geom.computeBoundingSphere();
+
+    const mat = new THREE.MeshStandardMaterial({
+      color: 0x7CFF9A, // verde claro para mejor lectura
+      
+      roughness: 0.45,
+      metalness: 0.05,
+      transparent: true,
+      opacity: 0.95,
+      side: THREE.DoubleSide
+    });
+    const beam = new THREE.Mesh(geom, mat);
+    beam.renderOrder = 1;
+
+    const edges = new THREE.LineSegments(
+      new THREE.EdgesGeometry(geom),
+      new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.55, depthTest: true })
+    );
+    edges.renderOrder = 2;
+
+    const group = new THREE.Group();
+    group.add(beam);
+    group.add(edges);
+    scene.add(group);
+
+    // Camera ortográfica (permite vistas ortogonales reales + zoom)
+    const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 5000);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+
+    // Controles (igual que antes): amortiguación simple y gestos por defecto
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.08;
+    controls.enablePan = true;
+    controls.enableZoom = true;
+    const bb = geom.boundingBox;
+    const center = bb.getCenter(new THREE.Vector3());
+    const size = bb.getSize(new THREE.Vector3());
+    const radius = geom.boundingSphere ? geom.boundingSphere.radius : size.length() * 0.5;
+
+    controls.target.copy(center);
+
+    this._beamViewer = {
+      renderer,
+      scene,
+      camera,
+      controls,
+      group,
+      center,
+      size,
+      radius,
+      worldToCanon: mWorldToCanon.clone(),
+      connectorKeys: [info && info.aKey ? info.aKey : null, info && info.bKey ? info.bKey : null].filter(Boolean),
+      connectorsVisible: false,
+      connectorsGroup: null,
+      baseHalfHeight: Math.max(0.01, radius * 1.2),
+      mode: 'free'
+    };
+
+    // Render-on-demand
+    controls.addEventListener('change', () => this._beamViewerRender());
+    this._beamViewerRender();
+  }
+
+  _beamViewerResize() {
+    const v = this._beamViewer;
+    if (!v || !v.renderer || !v.camera || !this._beamViewerCanvas) return;
+
+    const canvas = this._beamViewerCanvas;
+    const w = canvas.clientWidth || 1;
+    const h = canvas.clientHeight || 1;
+
+    v.renderer.setSize(w, h, false);
+
+    const aspect = w / h;
+    const halfH = v.baseHalfHeight;
+
+    v.camera.left = -halfH * aspect;
+    v.camera.right = halfH * aspect;
+    v.camera.top = halfH;
+    v.camera.bottom = -halfH;
+    v.camera.updateProjectionMatrix();
+
+    this._beamViewerRender();
+  }
+
+  _beamViewerSetView(mode) {
+    const v = this._beamViewer;
+    if (!v) return;
+    v.mode = mode;
+
+    // Estado visual de botones
+    const setActive = (btn, active) => {
+      if (!btn) return;
+      btn.classList.toggle('zv-btn-primary', !!active);
+      btn.classList.toggle('zv-btn-secondary', !active);
+    };
+    setActive(this._beamViewerBtnPlan, mode === 'plan');
+    setActive(this._beamViewerBtnSide, mode === 'side');
+    setActive(this._beamViewerBtnIso, mode === 'iso');
+    setActive(this._beamViewerBtnFree, mode === 'free');
+
+    const c = v.center || new THREE.Vector3();
+    const dist = Math.max(0.2, v.radius * 3.0);
+
+    // Por defecto: permitir zoom/pan. En vistas fijas deshabilitamos rotación.
+    v.controls.enableRotate = (mode === 'free');
+
+    if (mode === 'plan') {
+      v.camera.up.set(0, 1, 0);
+      v.camera.position.set(c.x, c.y, c.z + dist);
+    } else if (mode === 'side') {
+      v.camera.up.set(0, 0, 1);
+      v.camera.position.set(c.x, c.y + dist, c.z);
+    } else if (mode === 'iso') {
+      v.camera.up.set(0, 0, 1);
+      v.camera.position.set(c.x + dist, c.y + dist, c.z + dist);
+    } else { // free
+      v.camera.up.set(0, 0, 1);
+      if (v.camera.position.distanceToSquared(c) < 1e-6) {
+        v.camera.position.set(c.x + dist, c.y + dist, c.z + dist);
+      }
+    }
+
+    v.camera.lookAt(c);
+    v.controls.target.copy(c);
+    v.controls.update();
+    this._beamViewerRender();
+  }
+
+  _beamViewerRender() {
+    const v = this._beamViewer;
+    if (!v || !v.renderer || !v.scene || !v.camera) return;
+    try {
+      v.renderer.render(v.scene, v.camera);
+    } catch (e) {}
+  }
+
+
+  _beamViewerToggleConnectors() {
+    const v = this._beamViewer;
+    if (!v) return;
+
+    const next = !v.connectorsVisible;
+
+    try {
+      if (next) this._beamViewerAddConnectors();
+      else this._beamViewerRemoveConnectors();
+    } catch (e) {
+      console.error(e);
+    }
+
+    v.connectorsVisible = next;
+
+    if (this._beamViewerBtnConn) {
+      this._beamViewerBtnConn.textContent = next ? 'Ocultar conectores' : 'Mostrar conectores';
+      this._beamViewerBtnConn.classList.toggle('zv-btn-primary', !!next);
+      this._beamViewerBtnConn.classList.toggle('zv-btn-secondary', !next);
+    }
+
+    // Si activamos conectores, asegurar que el encuadre incluya el cilindro completo
+    if (next) {
+      try {
+        const box = new THREE.Box3().setFromObject(v.group);
+        const size = box.getSize(new THREE.Vector3());
+        const r = size.length() * 0.5;
+        if (isFinite(r) && r > 0) {
+          v.baseHalfHeight = Math.max(v.baseHalfHeight || 0.01, r * 1.25);
+        }
+        this._beamViewerResize();
+      } catch (e) {}
+    }
+
+    this._beamViewerRender();
+  }
+
+  _beamViewerAddConnectors() {
+    const v = this._beamViewer;
+    if (!v || !v.scene || !v.group || !v.worldToCanon) return;
+    if (!this.sceneManager || !this.sceneManager.structureGroup) return;
+    if (v.connectorsGroup) return;
+
+    const keys = Array.isArray(v.connectorKeys) ? v.connectorKeys : [];
+    if (!keys.length) return;
+
+    const src = this._beamViewerFindConnectorMeshesByKeys(keys);
+    if (!src.length) return;
+
+    const cg = new THREE.Group();
+    cg.name = 'beamViewerConnectors';
+
+    for (const obj of src) {
+      if (!obj || !obj.isMesh || !obj.geometry) continue;
+
+      try { obj.updateWorldMatrix(true, false); } catch (e) {}
+
+      const g = obj.geometry.clone();
+      try { g.applyMatrix4(obj.matrixWorld); } catch (e) {}
+      try { g.applyMatrix4(v.worldToCanon); } catch (e) {}
+      try { g.computeBoundingBox(); g.computeBoundingSphere(); } catch (e) {}
+
+      // Material (clonado para no afectar el original)
+      let mat = obj.material;
+      let matClone = null;
+      if (Array.isArray(mat)) {
+        matClone = mat.map(m => (m && m.clone) ? m.clone() : m);
+      } else {
+        matClone = (mat && mat.clone) ? mat.clone() : new THREE.MeshStandardMaterial({ color: 0xffa500 });
+      }
+
+      const cm = new THREE.Mesh(g, matClone);
+      cm.renderOrder = 3;
+
+      // Un poco de transparencia para leer bien la viga
+      try {
+        if (Array.isArray(cm.material)) {
+          for (const m2 of cm.material) {
+            if (!m2) continue;
+            m2.transparent = true;
+            const baseOp = (m2.opacity != null) ? m2.opacity : 1;
+            m2.opacity = Math.min(0.92, baseOp);
+          }
+        } else if (cm.material) {
+          cm.material.transparent = true;
+          const baseOp = (cm.material.opacity != null) ? cm.material.opacity : 1;
+          cm.material.opacity = Math.min(0.92, baseOp);
+        }
+      } catch (e) {}
+
+      cg.add(cm);
+
+      // Contorno para mayor legibilidad
+      try {
+        const e = new THREE.LineSegments(
+          new THREE.EdgesGeometry(g),
+          new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.35 })
+        );
+        e.renderOrder = 4;
+        cg.add(e);
+      } catch (e) {}
+    }
+
+    v.connectorsGroup = cg;
+    v.group.add(cg);
+  }
+
+  _beamViewerRemoveConnectors() {
+    const v = this._beamViewer;
+    if (!v || !v.connectorsGroup) return;
+
+    try { v.group.remove(v.connectorsGroup); } catch (e) {}
+
+    try {
+      v.connectorsGroup.traverse((obj) => {
+        if (!obj) return;
+        if (obj.geometry && obj.geometry.dispose) obj.geometry.dispose();
+        if (obj.material) {
+          if (Array.isArray(obj.material)) obj.material.forEach(m => m && m.dispose && m.dispose());
+          else if (obj.material.dispose) obj.material.dispose();
+        }
+      });
+    } catch (e) {}
+
+    v.connectorsGroup = null;
+  }
+
+  _beamViewerFindConnectorMeshesByKeys(keys) {
+    const g = this.sceneManager && this.sceneManager.structureGroup ? this.sceneManager.structureGroup : null;
+    if (!g || !Array.isArray(keys) || !keys.length) return [];
+    const want = new Set(keys);
+    const out = [];
+    g.traverse((obj) => {
+      if (!obj || !obj.userData || !obj.userData.isConnector) return;
+      const ci = obj.userData.connectorInfo;
+      const key = this._beamViewerKeyForConnector(ci);
+      if (key && want.has(key)) out.push(obj);
+    });
+    return out;
+  }
+
+  _beamViewerKeyForConnector(ci) {
+    if (!ci) return null;
+    const k = Number(ci.kOriginal);
+    const i = Number(ci.i);
+
+    // Conector de intersección (cruce de diagonales)
+    if (ci.id && String(ci.id).charAt(0) === 'X') {
+      if (isFinite(k) && isFinite(i)) return `X:${k}:${i}`;
+    }
+
+    // Polos (StructureGenerator usa 'pole_low' y 'pole_top')
+    if (k === 0) return 'pole_low';
+    if (k === state.N) return 'pole_top';
+
+    if (!isFinite(k) || !isFinite(i)) return null;
+    return `k${k}_i${i}`;
+  }
+
 
 
   _edgeKeyFromBeamInfo(bi) {
@@ -2332,7 +3463,6 @@ _updateConnectorTooltipPosition() {
       this.updateHeightDisplay();
       
       if (this.infoH1) this.infoH1.textContent = state.h1.toFixed(3);
-      if (this.statusBadge) this.statusBadge.textContent = `N=${state.N}    =${state.aDeg.toFixed(2)}°`;
       this.updateGeometryInfo();
     }
   }
@@ -2401,16 +3531,15 @@ _updateConnectorTooltipPosition() {
 
   // Metodo con throttling para actualizaciones continuas (sliders)
   throttledSyncInputs(source, param) {
-    // Actualizar valores inmediatamente
+    // Actualizar valores inmediatamente (sin rebuild)
     this.syncInputValues(source);
 
-    // Throttle independiente: no comparte estado con debounce
-    if (this.isUpdating) return;
-    this.isUpdating = true;
+    // Throttle por parámetro (no compartido) para evitar que sliders distintos se bloqueen entre sí
+    const key = String(param || 'default');
+    if (this._throttleTimers[key]) return;
 
-    this.throttleTimer = setTimeout(() => {
-      this.throttleTimer = null;
-      this.isUpdating = false;
+    this._throttleTimers[key] = setTimeout(() => {
+      this._throttleTimers[key] = null;
       // Solo ejecutar si no hay un debounce pendiente (el debounce tiene mayor precisión)
       if (!this.debounceTimer) {
         this.performSync();
@@ -2431,12 +3560,6 @@ _updateConnectorTooltipPosition() {
     }
     
     // Actualizar state temporalmente para calculo de badges
-    const prevState = {
-      N: state.N,
-      aDeg: state.aDeg,
-      Dmax: state.Dmax
-    };
-    
     if (this.nNum) state.N = parseInt(this.nNum.value);
     if (this.aNum) state.aDeg = parseFloat(this.aNum.value);
     if (this.dmaxNum) state.Dmax = parseFloat(this.dmaxNum.value);
@@ -2470,10 +3593,10 @@ _updateConnectorTooltipPosition() {
   //   NUEVO: Throttling para diametro del piso
   throttledSyncFloorDiameter(source) {
     this.syncFloorDiameterValues(source);
-    if (this.isUpdating) return;
-    this.isUpdating = true;
-    setTimeout(() => {
-      this.isUpdating = false;
+    // Flag independiente para no bloquear el slider de corte ni los sliders principales
+    if (this._throttleTimers['floor']) return;
+    this._throttleTimers['floor'] = setTimeout(() => {
+      this._throttleTimers['floor'] = null;
       if (!this._floorDebounceTimer) {
         this.performFloorDiameterSync();
       }
@@ -2517,10 +3640,10 @@ _updateConnectorTooltipPosition() {
 
   throttledSyncCutInputs(source) {
     this.syncCutValues(source);
-    if (this.isUpdating) return;
-    this.isUpdating = true;
-    setTimeout(() => {
-      this.isUpdating = false;
+    // Flag independiente para no bloquear el slider de piso ni los sliders principales
+    if (this._throttleTimers['cut']) return;
+    this._throttleTimers['cut'] = setTimeout(() => {
+      this._throttleTimers['cut'] = null;
       if (!this._cutDebounceTimer) {
         this.performCutSync();
       }
@@ -2759,6 +3882,14 @@ _updateConnectorTooltipPosition() {
     if (this.clearExtraBeamsBtn) {
       this.clearExtraBeamsBtn.disabled = !canDiag;
       this.clearExtraBeamsBtn.classList.toggle('zv-disabled', !canDiag);
+    }
+    if (this.multiSelectBeamsBtn) {
+      this.multiSelectBeamsBtn.disabled = !canDiag;
+      this.multiSelectBeamsBtn.classList.toggle('zv-disabled', !canDiag);
+      // Si la estructura desaparece mientras el modo está activo, salir limpiamente
+      if (!canDiag && this._multiSelectModeActive) {
+        this._exitMultiSelectBeamsMode(false);
+      }
     }
 
     // Faces

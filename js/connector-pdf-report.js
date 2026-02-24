@@ -15,9 +15,22 @@ export class ConnectorPDFReporter {
     const connectors = [];
     const beams = [];
 
+    // IMPORTANT:
+    // - La estructura puede contener conectores "huérfanos" que el generador deja en el grupo
+    //   pero marca como obj.visible=false (y ci._hiddenOrphan=true).
+    // - En reportes PDF NO deben aparecer conectores ocultos (evita "fantasmas").
     for (const ch of structureGroup.children) {
-      if (ch && ch.userData && ch.userData.isConnector) connectors.push(ch);
-      if (ch && ch.userData && ch.userData.isBeam) beams.push(ch);
+      if (!ch || !ch.userData) continue;
+      if (ch.userData.isConnector) {
+        const ci = ch.userData.connectorInfo || null;
+        if (ch.visible === false) continue;
+        if (ci && ci._hiddenOrphan) continue;
+        connectors.push(ch);
+      }
+      if (ch.userData.isBeam) {
+        if (ch.visible === false) continue;
+        beams.push(ch);
+      }
     }
 
     if (connectors.length === 0) {

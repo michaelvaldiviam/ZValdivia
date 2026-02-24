@@ -47,6 +47,20 @@ export class ShareManager {
           // ignorar si falla
         }
       }
+
+      // Overrides / ediciones de estructura (vigas/caras extra/eliminadas)
+      // Siempre se serializan si existen, independientemente de connector overrides
+      const safeSetJSON = (key, value) => {
+        if (!value) return;
+        const isEmptyObj = (typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length === 0);
+        const isEmptyArr = Array.isArray(value) && value.length === 0;
+        if (isEmptyObj || isEmptyArr) return;
+        try { params.set(key, encodeURIComponent(JSON.stringify(value))); } catch (e) { /* ign */ }
+      };
+      safeSetJSON('bo', state.structureBeamOverrides);
+      safeSetJSON('xf', state.structureIntersectionFaces);
+      safeSetJSON('xb', state.structureExtraBeams);
+      safeSetJSON('db', state.structureDeletedBeams);
     }
 
     const baseURL = window.location.origin + window.location.pathname;
@@ -120,6 +134,27 @@ export class ShareManager {
             // ignorar
           }
         }
+
+        // Overrides / ediciones de estructura (opcional)
+        const safeGetJSON = (key) => {
+          if (!params.has(key)) return null;
+          try {
+            const raw = decodeURIComponent(params.get(key));
+            return JSON.parse(raw);
+          } catch (e) {
+            return null;
+          }
+        };
+        const bo = safeGetJSON('bo');
+        const xf = safeGetJSON('xf');
+        const xb = safeGetJSON('xb');
+        const db = safeGetJSON('db');
+
+        if (bo && typeof bo === 'object') state.structureBeamOverrides = bo;
+        if (xf && typeof xf === 'object') state.structureIntersectionFaces = xf;
+        if (xb && Array.isArray(xb)) state.structureExtraBeams = xb;
+        if (db && Array.isArray(db)) state.structureDeletedBeams = db;
+
       }
     }
 
@@ -205,7 +240,15 @@ export class ShareManager {
         params: state.structureParams ? { ...state.structureParams } : null,
         connectorOverrides: (state.structureConnectorOverrides && typeof state.structureConnectorOverrides === 'object')
           ? { ...state.structureConnectorOverrides }
-          : {}
+          : {},
+        beamOverrides: (state.structureBeamOverrides && typeof state.structureBeamOverrides === 'object')
+          ? { ...state.structureBeamOverrides }
+          : {},
+        intersectionFaces: (state.structureIntersectionFaces && typeof state.structureIntersectionFaces === 'object')
+          ? { ...state.structureIntersectionFaces }
+          : {},
+        extraBeams: Array.isArray(state.structureExtraBeams) ? [...state.structureExtraBeams] : [],
+        deletedBeams: Array.isArray(state.structureDeletedBeams) ? [...state.structureDeletedBeams] : []
       }
     };
 
@@ -267,10 +310,28 @@ export class ShareManager {
             } else {
               state.structureConnectorOverrides = {};
             }
+
+            // Overrides de vigas/caras extra/eliminadas
+            if (config.structure.beamOverrides && typeof config.structure.beamOverrides === 'object') {
+              state.structureBeamOverrides = { ...config.structure.beamOverrides };
+            } else {
+              state.structureBeamOverrides = {};
+            }
+            if (config.structure.intersectionFaces && typeof config.structure.intersectionFaces === 'object') {
+              state.structureIntersectionFaces = { ...config.structure.intersectionFaces };
+            } else {
+              state.structureIntersectionFaces = {};
+            }
+            state.structureExtraBeams = Array.isArray(config.structure.extraBeams) ? [...config.structure.extraBeams] : [];
+            state.structureDeletedBeams = Array.isArray(config.structure.deletedBeams) ? [...config.structure.deletedBeams] : [];
           } else {
             state.structureParams = null;
             state.structureVisible = false;
             state.structureConnectorOverrides = {};
+            state.structureBeamOverrides = {};
+            state.structureIntersectionFaces = {};
+            state.structureExtraBeams = [];
+            state.structureDeletedBeams = [];
           }
 
           updateStateCalculations();
