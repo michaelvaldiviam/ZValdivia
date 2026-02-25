@@ -28,6 +28,12 @@ export class StructureGenerator {
       color: 0xef4444,
       metalness: 0.12,
       roughness: 0.6,
+      transparent: false,
+      opacity: 1,
+    });
+    // Material compartido para aristas de vigas (modo "Vigas en arista")
+    this.matBeamEdge = new THREE.LineBasicMaterial({
+      color: 0xef4444,
     });
 
     this._tmpV = new THREE.Vector3();
@@ -38,7 +44,7 @@ export class StructureGenerator {
   }
 
   clear() {
-    const sharedMats = new Set([this.matConnector, this.matBeam]);
+    const sharedMats = new Set([this.matConnector, this.matBeam, this.matBeamEdge]);
 
     const disposeMat = (mat) => {
       if (!mat || typeof mat.dispose !== 'function') return;
@@ -584,6 +590,17 @@ export class StructureGenerator {
       const kLevel = Math.max(a.k, b.k);
       m.name = `beam_k${this._kVisible(kLevel)}_${beamCounter++}`;
       this.group.add(m);
+
+      // Aristas limpias para modo "Vigas en arista": EdgesGeometry solo muestra
+      // aristas reales entre caras no coplanares (sin diagonales de triangulación)
+      const edgeLines = new THREE.LineSegments(
+        new THREE.EdgesGeometry(g, 15), // 15° threshold: ignora aristas entre triángulos coplanares
+        this.matBeamEdge
+      );
+      edgeLines.visible = false;
+      edgeLines.userData.isBeamEdge = true;
+      edgeLines.name = `beamEdge_${m.name}`;
+      this.group.add(edgeLines);
 
       // ── Pletinas de anclaje ────────────────────────────────────────────────
       // Las pletinas son hijos del mesh del conector → se mueven con él.

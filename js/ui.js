@@ -58,11 +58,7 @@ export class UIManager {
     this.togglePolysBtn = document.getElementById('togglePolysBtn');
     this.toggleLinesBtn = document.getElementById('toggleLinesBtn');
     this.fitBtn = document.getElementById('fitBtn');
-    this.beamFadeBtn    = document.getElementById('beamFadeBtn');
-    this.beamFadePanel  = document.getElementById('beamFadePanel');
-    this.beamFadeSlider = document.getElementById('beamFadeSlider');
-    this.beamFadeValue  = document.getElementById('beamFadeValue');
-    this.beamFadeClose  = document.getElementById('beamFadeClose');
+    this.beamWireframeBtn = document.getElementById('beamWireframeBtn');
     this.colorByLevelBtn = document.getElementById('colorByLevelBtn');
     this.toggleAxisBtn = document.getElementById('toggleAxisBtn');
     this.rotationBtn = document.getElementById('rotationBtn');
@@ -393,15 +389,9 @@ export class UIManager {
     if (this.fitBtn) 
       this.fitBtn.addEventListener('click', () => this.sceneManager.fitCamera());
 
-    // ── Atenuar vigas ──────────────────────────────────────────────────────
-    if (this.beamFadeBtn) {
-      this.beamFadeBtn.addEventListener('click', () => this._toggleBeamFadePanel());
-    }
-    if (this.beamFadeClose) {
-      this.beamFadeClose.addEventListener('click', () => this._closeBeamFadePanel());
-    }
-    if (this.beamFadeSlider) {
-      this.beamFadeSlider.addEventListener('input', (e) => this._onBeamFadeSlider(e.target.value));
+    // ── Vigas en arista (wireframe) ────────────────────────────────────────
+    if (this.beamWireframeBtn) {
+      this.beamWireframeBtn.addEventListener('click', () => this._toggleBeamWireframe());
     }
 
     // Height indicator interactivity
@@ -2039,74 +2029,32 @@ _updateConnectorTooltipPosition() {
     this._beamModalRestoreBtn = btnRestore;
   }
 
-  // ── Atenuar vigas ──────────────────────────────────────────────────────────
+  // ── Vigas en arista (wireframe) ───────────────────────────────────────────
 
-  _toggleBeamFadePanel() {
-    if (!this.beamFadePanel) return;
-    const isOpen = !this.beamFadePanel.classList.contains('zv-hidden');
-    if (isOpen) {
-      this._closeBeamFadePanel();
-    } else {
-      this.beamFadePanel.classList.remove('zv-hidden');
-      if (this.beamFadeBtn) {
-        this.beamFadeBtn.classList.add('active');
-        const statusEl = this.beamFadeBtn.querySelector('.button-status');
-        if (statusEl) statusEl.textContent = '●';
-      }
-    }
-  }
+  _toggleBeamWireframe() {
+    const sg = this.sceneManager && this.sceneManager.structureGroup;
+    if (!sg) return;
 
-  _closeBeamFadePanel() {
-    if (!this.beamFadePanel) return;
-    this.beamFadePanel.classList.add('zv-hidden');
-    if (this.beamFadeBtn) {
-      this.beamFadeBtn.classList.remove('active');
-      const statusEl = this.beamFadeBtn.querySelector('.button-status');
-      // Si la opacidad volvió a 0 (sólido), mostrar inactivo; si no, mantener activo visual
-      if (this.beamFadeSlider && Number(this.beamFadeSlider.value) === 0) {
-        statusEl && (statusEl.textContent = '○');
-      }
-    }
-  }
-
-  _onBeamFadeSlider(rawVal) {
-    const pct = Number(rawVal); // 0 = sólido, 100 = invisible
-    const opacity = 1 - (pct / 100);
-
-    // Actualizar label
-    if (this.beamFadeValue) {
-      this.beamFadeValue.textContent = pct === 0 ? '100%' : pct === 100 ? '0%' : `${Math.round(opacity * 100)}%`;
-    }
-
-    // Throttle: aplicar solo una vez por frame de animación
-    this._beamFadePending = opacity;
-    if (!this._beamFadeRafId) {
-      this._beamFadeRafId = requestAnimationFrame(() => {
-        this._beamFadeRafId = null;
-        this._applyBeamFade(this._beamFadePending);
-      });
-    }
-  }
-
-  _applyBeamFade(opacity) {
-    // matBeam es un material compartido por TODAS las vigas.
-    // Cambiar opacity directamente en él es O(1) — no hay que recorrer la escena.
-    const gen = this.sceneManager && this.sceneManager.structureGenerator;
+    const gen = this.sceneManager.structureGenerator;
     const mat = gen && gen.matBeam;
-    if (mat) {
-      // transparent solo necesita cambiar (y recompilar shader) cuando cruza el umbral 0↔1
-      const needsTransparentToggle = (opacity < 1) !== mat.transparent;
-      mat.transparent = opacity < 1;
-      mat.opacity = opacity;
-      mat.needsUpdate = needsTransparentToggle; // solo recompila shader cuando cambia el modo
+    if (!mat) return;
+
+    const next = !this._beamEdgeMode;
+    this._beamEdgeMode = next;
+
+    sg.traverse((obj) => {
+      if (!obj) return;
+      if (obj.userData && obj.userData.isBeam)     obj.visible = !next;
+      if (obj.userData && obj.userData.isBeamEdge)  obj.visible = next;
+    });
+
+    if (this.beamWireframeBtn) {
+      this.beamWireframeBtn.classList.toggle('active', next);
+      const statusEl = this.beamWireframeBtn.querySelector('.button-status');
+      if (statusEl) statusEl.textContent = next ? '●' : '○';
     }
 
-    // Forzar re-render
-    if (this.sceneManager && typeof this.sceneManager.render === 'function') {
-      this.sceneManager.render();
-    } else if (this.sceneManager && this.sceneManager.renderer && this.sceneManager.scene && this.sceneManager.camera) {
-      try { this.sceneManager.renderer.render(this.sceneManager.scene, this.sceneManager.camera); } catch(e) {}
-    }
+    if (this.sceneManager) this.sceneManager._needsRender = true;
   }
 
   _closeBeamEditModal() {
@@ -3897,14 +3845,16 @@ _updateConnectorTooltipPosition() {
    * Genera la estructura de vigas + conectores en la escena
    */
   handleGenerateStructure() {
-    // Resetear slider de atenuación al regenerar (los materiales se recrean)
-    if (this.beamFadeSlider && Number(this.beamFadeSlider.value) !== 0) {
-      this.beamFadeSlider.value = 0;
-      if (this.beamFadeValue) this.beamFadeValue.textContent = '100%';
-      // Restaurar opacidad del material compartido
-      const gen = this.sceneManager && this.sceneManager.structureGenerator;
-      if (gen && gen.matBeam) { gen.matBeam.transparent = false; gen.matBeam.opacity = 1; gen.matBeam.needsUpdate = true; }
+    // Si modo arista estaba activo, desactivarlo y resetear botón
+    if (this._beamEdgeMode) {
+      this._beamEdgeMode = false;
+      if (this.beamWireframeBtn) {
+        this.beamWireframeBtn.classList.remove('active');
+        const st = this.beamWireframeBtn.querySelector('.button-status');
+        if (st) st.textContent = '○';
+      }
     }
+
     const cylDiameterMm = Number((this.connCylDiameterMm && this.connCylDiameterMm.value) ? this.connCylDiameterMm.value : 0);
     const cylDepthMm = Number((this.connCylDepthMm && this.connCylDepthMm.value) ? this.connCylDepthMm.value : 0);
     const beamHeightMm = Number((this.beamHeightMm && this.beamHeightMm.value) ? this.beamHeightMm.value : 0);
