@@ -217,6 +217,29 @@
 </svg>
 <span class="fab-pulse"></span>
 </button>
+<!-- Panel flotante Atenuar vigas -->
+<div class="beam-fade-panel zv-hidden" id="beamFadePanel">
+  <div class="beam-fade-header">
+    <span class="beam-fade-title">
+      <svg fill="none" height="13" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24" width="13">
+        <rect x="2" y="7" width="20" height="10" rx="2"/>
+        <line x1="6" y1="12" x2="6" y2="12" stroke-width="3" stroke-linecap="round"/>
+        <line x1="10" y1="12" x2="18" y2="12" stroke-linecap="round" opacity="0.4"/>
+      </svg>
+      Atenuar vigas
+    </span>
+    <button class="beam-fade-close" id="beamFadeClose">✕</button>
+  </div>
+  <div class="beam-fade-body">
+    <div class="beam-fade-labels">
+      <span>Sólido</span>
+      <span id="beamFadeValue">100%</span>
+      <span>Invisible</span>
+    </div>
+    <input class="beam-fade-slider" id="beamFadeSlider"
+           type="range" min="0" max="100" step="1" value="0"/>
+  </div>
+</div>
 <!-- Panel de opciones avanzadas -->
 <div class="advanced-panel" id="advancedPanel">
 <div class="advanced-card">
@@ -268,6 +291,23 @@
 <div class="mini-input-wrap">
 <span class="mini-input-hint">Alto</span>
 <input class="param-number" id="beamHeightMm" min="1" step="1" type="number" value="90"/>
+</div>
+</div>
+</div>
+<div class="mini-form-row" style="margin-top: 10px;">
+<label class="mini-label">Pletina de anclaje (mm)</label>
+<div class="mini-input-grid">
+<div class="mini-input-wrap">
+<span class="mini-input-hint">Espesor</span>
+<input class="param-number" id="platThicknessMm" min="1" step="1" type="number" value="3"/>
+</div>
+<div class="mini-input-wrap">
+<span class="mini-input-hint">Largo</span>
+<input class="param-number" id="platLengthMm" min="1" step="1" type="number" value="120"/>
+</div>
+<div class="mini-input-wrap">
+<span class="mini-input-hint">Ancho</span>
+<input class="param-number" id="platWidthMm" min="1" step="1" type="number" value="50"/>
 </div>
 </div>
 </div>
@@ -363,6 +403,14 @@
 <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>
 </svg>
 <span>Ajustar cámara</span>
+</button>
+<button class="option-button" id="beamFadeBtn">
+<svg fill="none" height="14" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24" width="14">
+<rect x="2" y="7" width="20" height="10" rx="2"/>
+<line x1="6" y1="12" x2="6" y2="12" stroke-width="3" stroke-linecap="round"/>
+<line x1="10" y1="12" x2="18" y2="12" stroke-linecap="round" opacity="0.4"/>
+</svg>
+<span>Atenuar vigas</span>
 </button>
 </div>
 </div>

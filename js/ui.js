@@ -58,6 +58,11 @@ export class UIManager {
     this.togglePolysBtn = document.getElementById('togglePolysBtn');
     this.toggleLinesBtn = document.getElementById('toggleLinesBtn');
     this.fitBtn = document.getElementById('fitBtn');
+    this.beamFadeBtn    = document.getElementById('beamFadeBtn');
+    this.beamFadePanel  = document.getElementById('beamFadePanel');
+    this.beamFadeSlider = document.getElementById('beamFadeSlider');
+    this.beamFadeValue  = document.getElementById('beamFadeValue');
+    this.beamFadeClose  = document.getElementById('beamFadeClose');
     this.colorByLevelBtn = document.getElementById('colorByLevelBtn');
     this.toggleAxisBtn = document.getElementById('toggleAxisBtn');
     this.rotationBtn = document.getElementById('rotationBtn');
@@ -68,6 +73,9 @@ export class UIManager {
     // Viga: "Alto" (crece hacia el interior) y "Ancho" (pasa por la arista)
     this.beamHeightMm = document.getElementById('beamHeightMm');
     this.beamWidthMm = document.getElementById('beamWidthMm');
+    this.platThicknessMm = document.getElementById('platThicknessMm');
+    this.platLengthMm = document.getElementById('platLengthMm');
+    this.platWidthMm = document.getElementById('platWidthMm');
     this.generateStructureBtn = document.getElementById('generateStructureBtn');
     this.toggleStructureVisible = document.getElementById('toggleStructureVisible');
     this.exportStructureObjBtn = document.getElementById('exportStructureObjBtn');
@@ -384,6 +392,17 @@ export class UIManager {
       this.toggleLinesBtn.addEventListener('click', () => this.toggleLines());
     if (this.fitBtn) 
       this.fitBtn.addEventListener('click', () => this.sceneManager.fitCamera());
+
+    // ── Atenuar vigas ──────────────────────────────────────────────────────
+    if (this.beamFadeBtn) {
+      this.beamFadeBtn.addEventListener('click', () => this._toggleBeamFadePanel());
+    }
+    if (this.beamFadeClose) {
+      this.beamFadeClose.addEventListener('click', () => this._closeBeamFadePanel());
+    }
+    if (this.beamFadeSlider) {
+      this.beamFadeSlider.addEventListener('input', (e) => this._onBeamFadeSlider(e.target.value));
+    }
 
     // Height indicator interactivity
     if (this.heightIndicatorInput) {
@@ -2020,6 +2039,76 @@ _updateConnectorTooltipPosition() {
     this._beamModalRestoreBtn = btnRestore;
   }
 
+  // ── Atenuar vigas ──────────────────────────────────────────────────────────
+
+  _toggleBeamFadePanel() {
+    if (!this.beamFadePanel) return;
+    const isOpen = !this.beamFadePanel.classList.contains('zv-hidden');
+    if (isOpen) {
+      this._closeBeamFadePanel();
+    } else {
+      this.beamFadePanel.classList.remove('zv-hidden');
+      if (this.beamFadeBtn) {
+        this.beamFadeBtn.classList.add('active');
+        const statusEl = this.beamFadeBtn.querySelector('.button-status');
+        if (statusEl) statusEl.textContent = '●';
+      }
+    }
+  }
+
+  _closeBeamFadePanel() {
+    if (!this.beamFadePanel) return;
+    this.beamFadePanel.classList.add('zv-hidden');
+    if (this.beamFadeBtn) {
+      this.beamFadeBtn.classList.remove('active');
+      const statusEl = this.beamFadeBtn.querySelector('.button-status');
+      // Si la opacidad volvió a 0 (sólido), mostrar inactivo; si no, mantener activo visual
+      if (this.beamFadeSlider && Number(this.beamFadeSlider.value) === 0) {
+        statusEl && (statusEl.textContent = '○');
+      }
+    }
+  }
+
+  _onBeamFadeSlider(rawVal) {
+    const pct = Number(rawVal); // 0 = sólido, 100 = invisible
+    const opacity = 1 - (pct / 100);
+
+    // Actualizar label
+    if (this.beamFadeValue) {
+      this.beamFadeValue.textContent = pct === 0 ? '100%' : pct === 100 ? '0%' : `${Math.round(opacity * 100)}%`;
+    }
+
+    // Throttle: aplicar solo una vez por frame de animación
+    this._beamFadePending = opacity;
+    if (!this._beamFadeRafId) {
+      this._beamFadeRafId = requestAnimationFrame(() => {
+        this._beamFadeRafId = null;
+        this._applyBeamFade(this._beamFadePending);
+      });
+    }
+  }
+
+  _applyBeamFade(opacity) {
+    // matBeam es un material compartido por TODAS las vigas.
+    // Cambiar opacity directamente en él es O(1) — no hay que recorrer la escena.
+    const gen = this.sceneManager && this.sceneManager.structureGenerator;
+    const mat = gen && gen.matBeam;
+    if (mat) {
+      // transparent solo necesita cambiar (y recompilar shader) cuando cruza el umbral 0↔1
+      const needsTransparentToggle = (opacity < 1) !== mat.transparent;
+      mat.transparent = opacity < 1;
+      mat.opacity = opacity;
+      mat.needsUpdate = needsTransparentToggle; // solo recompila shader cuando cambia el modo
+    }
+
+    // Forzar re-render
+    if (this.sceneManager && typeof this.sceneManager.render === 'function') {
+      this.sceneManager.render();
+    } else if (this.sceneManager && this.sceneManager.renderer && this.sceneManager.scene && this.sceneManager.camera) {
+      try { this.sceneManager.renderer.render(this.sceneManager.scene, this.sceneManager.camera); } catch(e) {}
+    }
+  }
+
   _closeBeamEditModal() {
     if (!this._beamModalOverlay) return;
     this._beamModalOverlay.classList.add('zv-hidden');
@@ -2539,15 +2628,24 @@ _updateConnectorTooltipPosition() {
     for (const obj of src) {
       if (!obj || !obj.isMesh || !obj.geometry) continue;
 
-      try { obj.updateWorldMatrix(true, false); } catch (e) {}
+      // Añadir el conector y todas sus pletinas hijas (isPlate=true)
+      const objectsToAdd = [obj];
+      obj.children.forEach(child => {
+        if (child && child.isMesh && child.userData && child.userData.isPlate) {
+          objectsToAdd.push(child);
+        }
+      });
 
-      const g = obj.geometry.clone();
-      try { g.applyMatrix4(obj.matrixWorld); } catch (e) {}
+      for (const srcObj of objectsToAdd) {
+      try { srcObj.updateWorldMatrix(true, false); } catch (e) {}
+
+      const g = srcObj.geometry.clone();
+      try { g.applyMatrix4(srcObj.matrixWorld); } catch (e) {}
       try { g.applyMatrix4(v.worldToCanon); } catch (e) {}
       try { g.computeBoundingBox(); g.computeBoundingSphere(); } catch (e) {}
 
       // Material (clonado para no afectar el original)
-      let mat = obj.material;
+      let mat = srcObj.material;
       let matClone = null;
       if (Array.isArray(mat)) {
         matClone = mat.map(m => (m && m.clone) ? m.clone() : m);
@@ -2585,6 +2683,7 @@ _updateConnectorTooltipPosition() {
         e.renderOrder = 4;
         cg.add(e);
       } catch (e) {}
+      } // fin loop objectsToAdd
     }
 
     v.connectorsGroup = cg;
@@ -3798,10 +3897,21 @@ _updateConnectorTooltipPosition() {
    * Genera la estructura de vigas + conectores en la escena
    */
   handleGenerateStructure() {
+    // Resetear slider de atenuación al regenerar (los materiales se recrean)
+    if (this.beamFadeSlider && Number(this.beamFadeSlider.value) !== 0) {
+      this.beamFadeSlider.value = 0;
+      if (this.beamFadeValue) this.beamFadeValue.textContent = '100%';
+      // Restaurar opacidad del material compartido
+      const gen = this.sceneManager && this.sceneManager.structureGenerator;
+      if (gen && gen.matBeam) { gen.matBeam.transparent = false; gen.matBeam.opacity = 1; gen.matBeam.needsUpdate = true; }
+    }
     const cylDiameterMm = Number((this.connCylDiameterMm && this.connCylDiameterMm.value) ? this.connCylDiameterMm.value : 0);
     const cylDepthMm = Number((this.connCylDepthMm && this.connCylDepthMm.value) ? this.connCylDepthMm.value : 0);
     const beamHeightMm = Number((this.beamHeightMm && this.beamHeightMm.value) ? this.beamHeightMm.value : 0);
     const beamWidthMm = Number((this.beamWidthMm && this.beamWidthMm.value) ? this.beamWidthMm.value : 0);
+    const platThicknessMm = Number((this.platThicknessMm && this.platThicknessMm.value) ? this.platThicknessMm.value : 3);
+    const platLengthMm = Number((this.platLengthMm && this.platLengthMm.value) ? this.platLengthMm.value : 120);
+    const platWidthMm = Number((this.platWidthMm && this.platWidthMm.value) ? this.platWidthMm.value : 50);
 
     if (!cylDiameterMm || !cylDepthMm || !beamHeightMm || !beamWidthMm) {
       this.showNotification('Ingresa diametro/profundidad del conector y alto/ancho de la viga (mm).', 'error');
@@ -3816,6 +3926,9 @@ _updateConnectorTooltipPosition() {
         cylDepthMm,
         beamHeightMm,
         beamWidthMm,
+        platThicknessMm: platThicknessMm > 0 ? platThicknessMm : 3,
+        platLengthMm: platLengthMm > 0 ? platLengthMm : 120,
+        platWidthMm: platWidthMm > 0 ? platWidthMm : 50,
       });
       this._maybeShowStructureWarnings();
       // Por defecto, dejar visible al generar
@@ -3863,6 +3976,9 @@ _updateConnectorTooltipPosition() {
       if (this.connCylDepthMm && Number.isFinite(Number(p.cylDepthMm))) this.connCylDepthMm.value = String(Math.round(Number(p.cylDepthMm)));
       if (this.beamWidthMm && Number.isFinite(Number(p.beamWidthMm))) this.beamWidthMm.value = String(Math.round(Number(p.beamWidthMm)));
       if (this.beamHeightMm && Number.isFinite(Number(p.beamHeightMm))) this.beamHeightMm.value = String(Math.round(Number(p.beamHeightMm)));
+      if (this.platThicknessMm && Number.isFinite(Number(p.platThicknessMm))) this.platThicknessMm.value = String(Number(p.platThicknessMm));
+      if (this.platLengthMm && Number.isFinite(Number(p.platLengthMm))) this.platLengthMm.value = String(Number(p.platLengthMm));
+      if (this.platWidthMm && Number.isFinite(Number(p.platWidthMm))) this.platWidthMm.value = String(Number(p.platWidthMm));
     }
     if (this.toggleStructureVisible) {
       this.toggleStructureVisible.checked = !!state.structureVisible;

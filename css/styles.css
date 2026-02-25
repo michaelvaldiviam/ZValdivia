@@ -1793,6 +1793,147 @@ body,
 }
 
 
+/* ============================================
+   PANEL FLOTANTE ATENUAR VIGAS
+   ============================================ */
+
+.beam-fade-panel {
+  position: fixed;
+  bottom: 90px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1100;
+  background: rgba(18, 18, 28, 0.92);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(139, 92, 246, 0.3);
+  border-radius: 16px;
+  padding: 12px 16px 14px;
+  min-width: 260px;
+  max-width: 320px;
+  width: calc(100vw - 48px);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5), 0 0 0 1px rgba(139,92,246,0.1);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.beam-fade-panel.zv-hidden {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-50%) translateY(8px);
+}
+
+body.light-mode .beam-fade-panel {
+  background: rgba(255,255,255,0.94);
+  border-color: rgba(99,102,241,0.25);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.15);
+}
+
+.beam-fade-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.beam-fade-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+
+.beam-fade-close {
+  background: none;
+  border: none;
+  color: var(--text-tertiary);
+  font-size: 13px;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+  line-height: 1;
+  transition: color 0.15s, background 0.15s;
+}
+
+.beam-fade-close:hover {
+  color: var(--text-primary);
+  background: rgba(255,255,255,0.08);
+}
+
+.beam-fade-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.beam-fade-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  color: var(--text-tertiary);
+  font-weight: 500;
+}
+
+#beamFadeValue {
+  color: #a78bfa;
+  font-weight: 700;
+  font-size: 10px;
+}
+
+.beam-fade-slider {
+  width: 100%;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(139, 92, 246, 0.2);
+  outline: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+}
+
+body.light-mode .beam-fade-slider {
+  background: rgba(139, 92, 246, 0.25);
+}
+
+.beam-fade-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #6366f1 0%, #a78bfa 100%);
+  box-shadow: 0 2px 8px rgba(139, 92, 246, 0.6);
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.beam-fade-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.18);
+  box-shadow: 0 3px 12px rgba(139, 92, 246, 0.8);
+}
+
+.beam-fade-slider::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #6366f1 0%, #a78bfa 100%);
+  box-shadow: 0 2px 8px rgba(139, 92, 246, 0.6);
+  cursor: pointer;
+}
+
+/* Botón activo cuando el panel está abierto */
+#beamFadeBtn.active {
+  background: rgba(139, 92, 246, 0.18);
+  border-color: rgba(139, 92, 246, 0.5);
+}
+
+#beamFadeBtn.active .button-status {
+  color: #a78bfa;
+}
+
+
 /* Tooltip flotante para conectores (seleccion con 1er tap) */
 .zv-connector-tooltip{
   position: fixed;

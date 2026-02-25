@@ -94,6 +94,10 @@ export class StructureGenerator {
     // Compatibilidad: antes se llamaba beamThicknessMm
     const beamHeight = (Number(params.beamHeightMm ?? params.beamThicknessMm) || 1) / 1000;
     const beamWidth = (Number(params.beamWidthMm) || 1) / 1000;
+    // Pletina de anclaje: espesor, largo y ancho (por defecto 3mm / 120mm / 50mm)
+    const platThickness = Math.max(0.001, (Number(params.platThicknessMm) || 3) / 1000);
+    const platLength    = Math.max(0.001, (Number(params.platLengthMm)    || 120) / 1000);
+    const platWidth     = Math.max(0.001, (Number(params.platWidthMm)     || 50) / 1000);
 
     const startKNode = cutActive ? cutLevel : 0;
 
@@ -199,6 +203,13 @@ export class StructureGenerator {
     // Nota: copiamos los Map; los objetos value se reutilizan (no se mutan salvo directrix, que se recomputa siempre).
     const vertexMap = new Map(baseVertexMap);
     const edgeMap = new Map(baseEdgeMap);
+
+    // Limpiar referencias a meshes anteriores en los objetos de vértice cacheados.
+    // Sin esto, las pletinas se añaden como hijas del conector de la generación anterior
+    // (ya eliminado de la escena) en lugar del nuevo.
+    for (const v of vertexMap.values()) {
+      v.connectorMesh = null;
+    }
 
     // 2.05) Vigas eliminadas por el usuario (se excluyen de edgeMap)
     // Guardamos las eliminaciones como edgeKeys deterministicas: "<aKey>|<bKey>" (ordenadas)
@@ -458,6 +469,8 @@ export class StructureGenerator {
       mesh.userData.objVertices = cdata.objVertices;
       mesh.userData.objFaces = cdata.objFaces;
       this.group.add(mesh);
+      // Guardar referencia al mesh del conector para que las pletinas puedan ser hijos de él
+      v.connectorMesh = mesh;
     }
 
     // 5) Vigas por arista unica
@@ -571,9 +584,101 @@ export class StructureGenerator {
       const kLevel = Math.max(a.k, b.k);
       m.name = `beam_k${this._kVisible(kLevel)}_${beamCounter++}`;
       this.group.add(m);
-    }
 
-    // Ocultar conectores "huérfanos" (sin ninguna viga conectada).
+      // ── Pletinas de anclaje ────────────────────────────────────────────────
+      // Las pletinas son hijos del mesh del conector → se mueven con él.
+      // La testa que toca el cilindro sigue el plano de bisel (paralela a la superficie).
+      if (platThickness > 1e-6 && platLength > 1e-6) {
+        const _e = dir.clone();
+        const uA2 = a.directrix.clone().normalize();
+        const uB2 = b.directrix.clone().normalize();
+
+        // Marco local de la viga
+        let _t = this._projectPerp(uA2.clone().add(uB2), _e);
+        if (_t.lengthSq() < 1e-10) _t = this._projectPerp(uA2, _e);
+        if (_t.lengthSq() < 1e-10) _t = this._projectPerp(uB2, _e);
+        if (_t.lengthSq() > 1e-10) {
+          _t.normalize();
+          const uAvg2 = uA2.clone().add(uB2);
+          if (uAvg2.lengthSq() > 1e-12 && _t.dot(uAvg2) < 0) _t.multiplyScalar(-1);
+          const _w = new THREE.Vector3().crossVectors(_e, _t).normalize();
+
+          const cylA = cylForK(a.k, !!a.isIntersection);
+          const cylB = cylForK(b.k, !!b.isIntersection);
+
+          // Plano de bisel en A: mismo cálculo que _createBeveledBeamGeometry
+          // normal perpendicular a uA2 apuntando en la dirección radial de la viga
+          const _buildBevelPlane = (nodePos, nodeDir, cylRadius, beamDirFromNode) => {
+            // nA = projectPerp(beamDir, nodeDir): componente de e perp a la directriz.
+            // Garantiza nA⊥nodeDir (plano contiene la directriz) y nA·e≠0 (corta la viga).
+            let n = this._projectPerp(beamDirFromNode, nodeDir);
+            if (n.lengthSq() < 1e-12) n = this._projectPerp(_w, nodeDir);
+            if (n.lengthSq() < 1e-12) return null;
+            n.normalize();
+            return { n, origin: nodePos, d: cylRadius };
+          };
+
+          const dirAtoB = _e.clone();          // A→B
+          const dirBtoA = _e.clone().negate(); // B→A
+
+          // Tener en cuenta el offset del conector: el cilindro se desplaza cylOffset
+          // a lo largo de su directriz hacia el interior. El punto de inicio de la pletina
+          // y el origen del plano de bisel deben desplazarse igual.
+          const offsetA = cylA.offset || 0;
+          const offsetB = cylB.offset || 0;
+          const pA_plat = pA2.clone().addScaledVector(uA2, offsetA);
+          const pB_plat = pB2.clone().addScaledVector(uB2, offsetB);
+          const originA_bevel = pA.clone().addScaledVector(uA2, offsetA);
+          const originB_bevel = pB.clone().addScaledVector(uB2, offsetB);
+
+          const bevelPlaneA = _buildBevelPlane(originA_bevel, uA2, cylA.radius, dirAtoB);
+          const bevelPlaneB = _buildBevelPlane(originB_bevel, uB2, cylB.radius, dirBtoA);
+
+          // Intersecta un rayo (desde pt en dirección rayDir) con un plano
+          const intersectRayPlane = (pt, rayDir, plane) => {
+            if (!plane) return pt.clone();
+            const denom = plane.n.dot(rayDir);
+            if (Math.abs(denom) < 1e-10) return pt.clone();
+            const t = (plane.d - plane.n.dot(new THREE.Vector3().subVectors(pt, plane.origin))) / denom;
+            return pt.clone().addScaledVector(rayDir, Math.max(0, t));
+          };
+
+          // Pletina A: hijo del conector A
+          // pA_plat = pA2 + uA*offsetA: inicio en la superficie real del cilindro con offset
+          const connMeshA = a.connectorMesh;
+          if (connMeshA) {
+            const geomA = this._createBeveledPletinaGeometry(
+              pA_plat, _e, _w, _t, platLength, platWidth, platThickness,
+              bevelPlaneA, connMeshA.position, connMeshA.quaternion, intersectRayPlane
+            );
+            if (geomA) {
+              const pm = new THREE.Mesh(geomA, this.matConnector);
+              pm.name = `plat_A_${m.name}`;
+              pm.userData.isPlate = true;
+              connMeshA.add(pm);
+            }
+          }
+
+          // Pletina B: hijo del conector B
+          const connMeshB = b.connectorMesh;
+          if (connMeshB) {
+            const geomB = this._createBeveledPletinaGeometry(
+              pB_plat, _e.clone().negate(), _w, _t, platLength, platWidth, platThickness,
+              bevelPlaneB, connMeshB.position, connMeshB.quaternion, intersectRayPlane
+            );
+            if (geomB) {
+              const pm = new THREE.Mesh(geomB, this.matConnector);
+              pm.name = `plat_B_${m.name}`;
+              pm.userData.isPlate = true;
+              connMeshB.add(pm);
+            }
+          }
+        }
+      }
+
+
+    } // fin for (const e of edgeMap.values())
+
     // Esto es clave cuando el usuario elimina vigas de aristas para crear aperturas:
     // los conectores que quedan sin conexiones deben desaparecer del 3D.
     (function hideOrphanConnectors(self){
@@ -899,24 +1004,25 @@ export class StructureGenerator {
       pB.clone().addScaledVector(w, -halfW).addScaledVector(t, height),    // 7 inner
     ];
 
-    // ---- Planos de bisel: la testa debe ser PARALELA a la directriz (u pertenece al plano) ----
-    // => normal n   u. Posicionamos el plano para que sea tangente al cilindro:
-    //    n   (x - origin) = R
+    // ---- Planos de bisel ----
+    // La testa en A debe:
+    //   1. Contener la directriz uA del cilindro → nA ⊥ uA
+    //   2. Cortar la viga (no ser paralela a e) → nA·e ≠ 0
+    //   3. Ser tangente al cilindro → d = R
+    //
+    // La fórmula correcta es nA = projectPerp(e, uA):
+    // componente de e perpendicular a uA. Esto garantiza nA⊥uA
+    // y nA·e > 0 (siempre corta la viga), y que el plano contiene uA.
     const RA = (typeof cylRadiusA === 'number' && cylRadiusA > 0) ? cylRadiusA : 0;
     const RB = (typeof cylRadiusB === 'number' && cylRadiusB > 0) ? cylRadiusB : 0;
 
-    const dirFromA = new THREE.Vector3().subVectors(pB, pA).normalize(); // sale de A hacia B
-    const dirFromB = new THREE.Vector3().subVectors(pA, pB).normalize(); // sale de B hacia A
+    const dirFromA = new THREE.Vector3().subVectors(pB, pA).normalize();
+    const dirFromB = new THREE.Vector3().subVectors(pA, pB).normalize();
 
-    const radialA = dirFromA.clone().sub(uA.clone().multiplyScalar(dirFromA.dot(uA)));
-    const radialB = dirFromB.clone().sub(uB.clone().multiplyScalar(dirFromB.dot(uB)));
+    // nA = projectPerp(dirFromA, uA) = e - uA*(e·uA)
+    let nA = this._projectPerp(dirFromA, uA);
+    let nB = this._projectPerp(dirFromB, uB);
 
-    let nA = radialA.lengthSq() < 1e-12 ? w.clone() : radialA.normalize();
-    let nB = radialB.lengthSq() < 1e-12 ? w.clone() : radialB.normalize();
-
-    // Garantizar n   u (por estabilidad numerica)
-    nA = this._projectPerp(nA, uA);
-    nB = this._projectPerp(nB, uB);
     if (nA.lengthSq() < 1e-12) nA = this._projectPerp(w, uA);
     if (nB.lengthSq() < 1e-12) nB = this._projectPerp(w, uB);
     if (nA.lengthSq() < 1e-12 || nB.lengthSq() < 1e-12) return null;
@@ -1023,6 +1129,96 @@ export class StructureGenerator {
       objFaces,
       faces,
     };
+  }
+
+  /**
+   * Pletina de anclaje.
+   *
+   * Marco:
+   *   outDir  = eje del cilindro (directrix) — la pletina se extiende largo/2 en cada sentido
+   *   widthDir (_w) = lateral de la viga — la pletina tiene 2*halfPlatW de ancho, centrado
+   *   thickDir (_t) = "alto" de la viga (hacia interior) — la pletina tiene `thickness` de espesor
+   *                   y arranca en t=0 (borde exterior de la viga) creciendo hacia adentro
+   *
+   * @param {THREE.Vector3} origin    - Centro de la pletina (punto sobre la superficie del cilindro)
+   * @param {THREE.Vector3} outDir    - Eje longitudinal (directrix del cilindro)
+   * @param {THREE.Vector3} widthDir  - Dirección del ancho (_w, lateral de la viga)
+   * @param {THREE.Vector3} thickDir  - Dirección del espesor (_t, hacia interior de la viga)
+   * @param {number} halfPlatW        - Semiancho de la pletina (m)
+   * @param {number} length           - Largo total de la pletina (m), centrado en origin
+   * @param {number} thickness        - Espesor de la pletina (m), crece desde t=0 hacia adentro
+   */
+  /**
+   * Pletina con testa biselada en el lado que toca el cilindro.
+   *
+   * - Sale desde `startPt` (superficie cilindro, mundo) en `outDir` durante `length`
+   * - Alto `height` en dirección `heightDir` (_t), de 0 a height
+   * - Espesor `thick` en dirección `thickDir` (_w), centrado
+   * - La testa inicial se corta con `bevelPlane` (plano tangente al cilindro)
+   * - Geometría en coordenadas LOCALES del conector (restar connectorWorldPos)
+   */
+  _createBeveledPletinaGeometry(startPt, outDir, thickDir, heightDir, length, height, thick, bevelPlane, connectorWorldPos, connectorWorldQuat, intersectRayPlane) {
+    try {
+      const o  = outDir.clone().normalize();
+      const wd = thickDir.clone().normalize();   // _w: espesor
+      const td = heightDir.clone().normalize();  // _t: alto
+
+      const halfThick = thick / 2;
+      const endPt = startPt.clone().addScaledVector(o, length);
+
+      // 4 esquinas del perfil en el extremo FIN (testa recta)
+      const endCorners = [
+        endPt.clone().addScaledVector(wd, -halfThick),
+        endPt.clone().addScaledVector(wd, +halfThick),
+        endPt.clone().addScaledVector(wd, +halfThick).addScaledVector(td, height),
+        endPt.clone().addScaledVector(wd, -halfThick).addScaledVector(td, height),
+      ];
+
+      // 4 esquinas del perfil en el extremo INICIO: biselado con el plano del cilindro
+      const startCorners = endCorners.map(ec => {
+        const candidate = ec.clone().addScaledVector(o, -length);
+        return intersectRayPlane(candidate, o, bevelPlane);
+      });
+
+      // Convertir coordenadas mundiales → locales del conector:
+      // local = invQuat * (world - connectorPos)
+      const invQuat = connectorWorldQuat.clone().invert();
+      const toLocal = (pt) => {
+        const v = pt.clone().sub(connectorWorldPos);
+        v.applyQuaternion(invQuat);
+        return v;
+      };
+
+      const verts = [
+        ...startCorners.map(toLocal),   // 0-3: testa inicio (biselada)
+        ...endCorners.map(toLocal),     // 4-7: testa fin (recta)
+      ];
+
+      const positions = new Float32Array(8 * 3);
+      for (let i = 0; i < 8; i++) {
+        positions[i * 3]     = verts[i].x;
+        positions[i * 3 + 1] = verts[i].y;
+        positions[i * 3 + 2] = verts[i].z;
+      }
+
+      const indices = [
+        0, 3, 2,  0, 2, 1,   // testa inicio (biselada)
+        4, 5, 6,  4, 6, 7,   // testa fin
+        0, 4, 7,  0, 7, 3,   // cara -wd
+        1, 2, 6,  1, 6, 5,   // cara +wd
+        0, 1, 5,  0, 5, 4,   // cara exterior (t=0)
+        3, 7, 6,  3, 6, 2,   // cara interior (t=height)
+      ];
+
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      g.setIndex(indices);
+      g.computeVertexNormals();
+      g.computeBoundingSphere();
+      return g;
+    } catch (e) {
+      return null;
+    }
   }
 
   _projectPerp(v, axis) {

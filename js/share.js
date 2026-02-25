@@ -38,6 +38,9 @@ export class ShareManager {
       if (Number.isFinite(Number(p.cylDepthMm))) params.set('cp', String(Math.round(Number(p.cylDepthMm))));
       if (Number.isFinite(Number(p.beamWidthMm))) params.set('bw', String(Math.round(Number(p.beamWidthMm))));
       if (Number.isFinite(Number(p.beamHeightMm))) params.set('bh', String(Math.round(Number(p.beamHeightMm))));
+      if (Number.isFinite(Number(p.platThicknessMm))) params.set('pt', String(Number(p.platThicknessMm)));
+      if (Number.isFinite(Number(p.platLengthMm))) params.set('pl', String(Number(p.platLengthMm)));
+      if (Number.isFinite(Number(p.platWidthMm))) params.set('pw', String(Number(p.platWidthMm)));
 
       // Overrides por nivel para conectores (opcional)
       if (state.structureConnectorOverrides && Object.keys(state.structureConnectorOverrides).length > 0) {
@@ -108,6 +111,9 @@ export class ShareManager {
           cylDepthMm: cp,
           beamWidthMm: bw,
           beamHeightMm: bh,
+          platThicknessMm: params.has('pt') ? Number(params.get('pt')) : 3,
+          platLengthMm: params.has('pl') ? Number(params.get('pl')) : 120,
+          platWidthMm: params.has('pw') ? Number(params.get('pw')) : 50,
         };
         state.structureVisible = params.get('sv') === '0' ? false : true;
 
