@@ -589,6 +589,11 @@ export class SceneManager {
     // Respetar toggle visible
     this.structureGroup.visible = !!state.structureVisible;
     this._needsRender = true;
+
+    // Hook para que la UI pueda reaplicar estados visuales (ej: modo wireframe)
+    if (typeof this._onAfterGenerate === 'function') {
+      try { this._onAfterGenerate(); } catch(e) {}
+    }
   }
 
   /**
@@ -758,7 +763,7 @@ export class SceneManager {
       // Guardamos proyecciones sobre la directriz para poder definir presets de offset.
       let best = null; // { angDeg, sEdge, sInner, tCenter }
 
-      this.structureGroup.traverse((obj) => {
+      this.structureGroup.children.forEach((obj) => {
         if (!obj || !obj.userData || !obj.userData.beamInfo || !Array.isArray(obj.userData.objVertices)) return;
         const bi = obj.userData.beamInfo;
         const verts = obj.userData.objVertices;
@@ -878,6 +883,9 @@ export class SceneManager {
 
     const disposeMaterial = (mat) => {
       if (!mat || shared.has(mat)) return;
+      // Materiales de nivel cacheados en geometry.js: no los disponemos,
+      // se reutilizan en el siguiente rebuild (el cache los mantiene vivos).
+      if (mat.userData && mat.userData._zvLevelMat) return;
       try { mat.dispose(); } catch (e) { /* noop */ }
     };
 

@@ -2036,17 +2036,20 @@ _updateConnectorTooltipPosition() {
     if (!sg) return;
 
     const gen = this.sceneManager.structureGenerator;
-    const mat = gen && gen.matBeam;
-    if (!mat) return;
+    if (!gen) return;
 
     const next = !this._beamEdgeMode;
     this._beamEdgeMode = next;
 
-    sg.traverse((obj) => {
-      if (!obj) return;
-      if (obj.userData && obj.userData.isBeam)     obj.visible = !next;
-      if (obj.userData && obj.userData.isBeamEdge)  obj.visible = next;
-    });
+    // Construir EdgesGeometry bajo demanda (primera vez) o destruir
+    gen.buildBeamEdgeLines(next);
+
+    // Mostrar/ocultar meshes sólidos de vigas
+    for (const obj of sg.children) {
+      if (!obj || !obj.userData) continue;
+      if (obj.userData.isBeam)     obj.visible = !next;
+      if (obj.userData.isBeamEdge)  obj.visible = next;
+    }
 
     if (this.beamWireframeBtn) {
       this.beamWireframeBtn.classList.toggle('active', next);
@@ -2576,13 +2579,31 @@ _updateConnectorTooltipPosition() {
     for (const obj of src) {
       if (!obj || !obj.isMesh || !obj.geometry) continue;
 
-      // Añadir el conector y todas sus pletinas hijas (isPlate=true)
+      // Añadir el conector
       const objectsToAdd = [obj];
-      obj.children.forEach(child => {
-        if (child && child.isMesh && child.userData && child.userData.isPlate) {
+
+      // Buscar pletinas directamente en structureGroup.children
+      // El nombre tiene formato plat_A_beam_kN_M o plat_B_beam_kN_M
+      // La viga correspondiente al conector tiene su nombre en beamInfo
+      const sg = this.sceneManager.structureGroup;
+      for (const child of sg.children) {
+        if (!child || !child.isMesh || !child.userData || !child.userData.isPlate) continue;
+        // Incluir pletinas cuyo nombre referencia el mismo nivel k del conector
+        const platName = child.name || '';
+        // Extraer nombre de viga del nombre de pletina: plat_A_beam_kN_M → beam_kN_M
+        const beamPart = platName.replace(/^plat_[AB]_/, '');
+        // Verificar que esa viga pertenece a uno de los conectores buscados
+        if (keys.some(key => {
+          // key es el connectorInfo.id del conector (e.g. "C3-2" o "X3-2")
+          // beamInfo tiene aKey/bKey que son strings "k3_i2" etc.
+          // Comparar nivel k del conector con el nivel en el nombre de la pletina
+          const connInfo = obj.userData && obj.userData.connectorInfo;
+          const kConn = connInfo && connInfo.kOriginal;
+          return platName.includes(`_k${this.sceneManager._kVisible ? this.sceneManager._kVisible(kConn) : kConn}_`);
+        })) {
           objectsToAdd.push(child);
         }
-      });
+      }
 
       for (const srcObj of objectsToAdd) {
       try { srcObj.updateWorldMatrix(true, false); } catch (e) {}
@@ -4034,6 +4055,22 @@ _updateConnectorTooltipPosition() {
     this.sceneManager.requestRebuild();
     this.sceneManager.fitCamera();
     this.updateFacesCount();
+
+    // Registrar hook: después de cualquier regeneración de estructura,
+    // reaplicar el modo "Vigas en arista" si estaba activo.
+    this.sceneManager._onAfterGenerate = () => {
+      if (!this._beamEdgeMode) return;
+      const gen = this.sceneManager.structureGenerator;
+      if (!gen) return;
+      // Reconstruir EdgesGeometry (la estructura fue borrada y recreada)
+      gen.buildBeamEdgeLines(true);
+      // Ocultar sólidos, mostrar aristas
+      for (const obj of this.sceneManager.structureGroup.children) {
+        if (!obj || !obj.userData) continue;
+        if (obj.userData.isBeam)     obj.visible = false;
+        if (obj.userData.isBeamEdge) obj.visible = true;
+      }
+    };
 
     // Iniciar monitoreo de FPS
     this.startFPSMonitor();

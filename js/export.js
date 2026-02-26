@@ -184,10 +184,30 @@ export class StructureOBJExporter {
 
     structureGroup.traverse((child) => {
       if (!child || !child.isMesh) return;
+      if (child.userData && child.userData.isBeamEdge) return; // skip edge-only lines
       const mesh = child;
       const name = (mesh.name && mesh.name.trim()) ? mesh.name : `mesh_${meshCounter++}`;
       lines.push(`o ${name}`);
       lines.push(`g ${name}`);
+
+      // Pletinas: geometría en espacio structureGroup, exportar igual que cualquier mesh
+      if (mesh.userData && mesh.userData.isPlate) {
+        try { mesh.updateWorldMatrix(true, false); } catch(e) {}
+        const gd = mesh.geometry && mesh.geometry.userData;
+        if (gd && Array.isArray(gd.objVertices) && Array.isArray(gd.objFaces)) {
+          for (const v of gd.objVertices) {
+            const w = v.clone().applyMatrix4(mesh.matrixWorld);
+            lines.push(`v ${w.x.toFixed(6)} ${w.y.toFixed(6)} ${w.z.toFixed(6)}`);
+          }
+          lines.push('');
+          for (const face of gd.objFaces) {
+            lines.push(`f ${face.map(vi => vOffset + vi).join(' ')}`);
+          }
+          lines.push('');
+          vOffset += gd.objVertices.length;
+        }
+        return;
+      }
 
       const verts = [];
       const ud = mesh && mesh.userData ? mesh.userData : null;

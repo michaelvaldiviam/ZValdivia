@@ -479,6 +479,16 @@ export class StructureGenerator {
       v.connectorMesh = mesh;
     }
 
+    // Helper reutilizable: construye plano de bisel para una testa de viga/pletina.
+    // Definido UNA vez fuera del loop para no recrearlo en cada iteración.
+    const _buildBevelPlane = (nodePos, nodeDir, cylRadius, beamDirFromNode, fallbackDir) => {
+      let n = this._projectPerp(beamDirFromNode, nodeDir);
+      if (n.lengthSq() < 1e-12 && fallbackDir) n = this._projectPerp(fallbackDir, nodeDir);
+      if (n.lengthSq() < 1e-12) return null;
+      n.normalize();
+      return { n, origin: nodePos, d: cylRadius };
+    };
+
     // 5) Vigas por arista unica
     let beamCounter = 0;
     for (const e of edgeMap.values()) {
@@ -591,16 +601,9 @@ export class StructureGenerator {
       m.name = `beam_k${this._kVisible(kLevel)}_${beamCounter++}`;
       this.group.add(m);
 
-      // Aristas limpias para modo "Vigas en arista": EdgesGeometry solo muestra
-      // aristas reales entre caras no coplanares (sin diagonales de triangulación)
-      const edgeLines = new THREE.LineSegments(
-        new THREE.EdgesGeometry(g, 15), // 15° threshold: ignora aristas entre triángulos coplanares
-        this.matBeamEdge
-      );
-      edgeLines.visible = false;
-      edgeLines.userData.isBeamEdge = true;
-      edgeLines.name = `beamEdge_${m.name}`;
-      this.group.add(edgeLines);
+      // Aristas limpias para modo "Vigas en arista": diferidas hasta que se active
+      // Se crean bajo demanda en _buildBeamEdgeLines() para no penalizar generate()
+      m.userData._beamGeomRef = g; // referencia para crear EdgesGeometry bajo demanda
 
       // ── Pletinas de anclaje ────────────────────────────────────────────────
       // Las pletinas son hijos del mesh del conector → se mueven con él.
@@ -620,20 +623,9 @@ export class StructureGenerator {
           if (uAvg2.lengthSq() > 1e-12 && _t.dot(uAvg2) < 0) _t.multiplyScalar(-1);
           const _w = new THREE.Vector3().crossVectors(_e, _t).normalize();
 
-          const cylA = cylForK(a.k, !!a.isIntersection);
-          const cylB = cylForK(b.k, !!b.isIntersection);
+          // cylA/cylB ya calculados más arriba para trimA/trimB (reutilizar)
 
-          // Plano de bisel en A: mismo cálculo que _createBeveledBeamGeometry
-          // normal perpendicular a uA2 apuntando en la dirección radial de la viga
-          const _buildBevelPlane = (nodePos, nodeDir, cylRadius, beamDirFromNode) => {
-            // nA = projectPerp(beamDir, nodeDir): componente de e perp a la directriz.
-            // Garantiza nA⊥nodeDir (plano contiene la directriz) y nA·e≠0 (corta la viga).
-            let n = this._projectPerp(beamDirFromNode, nodeDir);
-            if (n.lengthSq() < 1e-12) n = this._projectPerp(_w, nodeDir);
-            if (n.lengthSq() < 1e-12) return null;
-            n.normalize();
-            return { n, origin: nodePos, d: cylRadius };
-          };
+          // plano de bisel: usar _buildBevelPlane(nodePos, nodeDir, cylRadius, beamDirFromNode)
 
           const dirAtoB = _e.clone();          // A→B
           const dirBtoA = _e.clone().negate(); // B→A
@@ -648,47 +640,30 @@ export class StructureGenerator {
           const originA_bevel = pA.clone().addScaledVector(uA2, offsetA);
           const originB_bevel = pB.clone().addScaledVector(uB2, offsetB);
 
-          const bevelPlaneA = _buildBevelPlane(originA_bevel, uA2, cylA.radius, dirAtoB);
-          const bevelPlaneB = _buildBevelPlane(originB_bevel, uB2, cylB.radius, dirBtoA);
+          const bevelPlaneA = _buildBevelPlane(originA_bevel, uA2, cylA.radius, dirAtoB, _w);
+          const bevelPlaneB = _buildBevelPlane(originB_bevel, uB2, cylB.radius, dirBtoA, _w);
 
-          // Intersecta un rayo (desde pt en dirección rayDir) con un plano
-          const intersectRayPlane = (pt, rayDir, plane) => {
-            if (!plane) return pt.clone();
-            const denom = plane.n.dot(rayDir);
-            if (Math.abs(denom) < 1e-10) return pt.clone();
-            const t = (plane.d - plane.n.dot(new THREE.Vector3().subVectors(pt, plane.origin))) / denom;
-            return pt.clone().addScaledVector(rayDir, Math.max(0, t));
-          };
-
-          // Pletina A: hijo del conector A
-          // pA_plat = pA2 + uA*offsetA: inicio en la superficie real del cilindro con offset
-          const connMeshA = a.connectorMesh;
-          if (connMeshA) {
-            const geomA = this._createBeveledPletinaGeometry(
-              pA_plat, _e, _w, _t, platLength, platWidth, platThickness,
-              bevelPlaneA, connMeshA.position, connMeshA.quaternion, intersectRayPlane
-            );
-            if (geomA) {
-              const pm = new THREE.Mesh(geomA, this.matConnector);
-              pm.name = `plat_A_${m.name}`;
-              pm.userData.isPlate = true;
-              connMeshA.add(pm);
-            }
+          // Pletina A: inicio en la superficie real del cilindro con offset
+          // Pletinas añadidas directamente al grupo (mismas coordenadas que vigas/conectores)
+          // No se usan como hijos del conector para evitar conversión de coordenadas
+          const geomA = this._createBeveledPletinaGeometry(
+            pA_plat, _e, _w, _t, platLength, platWidth, platThickness, bevelPlaneA
+          );
+          if (geomA) {
+            const pm = new THREE.Mesh(geomA, this.matConnector);
+            pm.name = `plat_A_${m.name}`;
+            pm.userData.isPlate = true;
+            this.group.add(pm);
           }
 
-          // Pletina B: hijo del conector B
-          const connMeshB = b.connectorMesh;
-          if (connMeshB) {
-            const geomB = this._createBeveledPletinaGeometry(
-              pB_plat, _e.clone().negate(), _w, _t, platLength, platWidth, platThickness,
-              bevelPlaneB, connMeshB.position, connMeshB.quaternion, intersectRayPlane
-            );
-            if (geomB) {
-              const pm = new THREE.Mesh(geomB, this.matConnector);
-              pm.name = `plat_B_${m.name}`;
-              pm.userData.isPlate = true;
-              connMeshB.add(pm);
-            }
+          const geomB = this._createBeveledPletinaGeometry(
+            pB_plat, _e.clone().negate(), _w, _t, platLength, platWidth, platThickness, bevelPlaneB
+          );
+          if (geomB) {
+            const pm = new THREE.Mesh(geomB, this.matConnector);
+            pm.name = `plat_B_${m.name}`;
+            pm.userData.isPlate = true;
+            this.group.add(pm);
           }
         }
       }
@@ -1174,42 +1149,115 @@ export class StructureGenerator {
    * - La testa inicial se corta con `bevelPlane` (plano tangente al cilindro)
    * - Geometría en coordenadas LOCALES del conector (restar connectorWorldPos)
    */
-  _createBeveledPletinaGeometry(startPt, outDir, thickDir, heightDir, length, height, thick, bevelPlane, connectorWorldPos, connectorWorldQuat, intersectRayPlane) {
-    try {
-      const o  = outDir.clone().normalize();
-      const wd = thickDir.clone().normalize();   // _w: espesor
-      const td = heightDir.clone().normalize();  // _t: alto
+  /**
+   * Construye (o destruye) los LineSegments de aristas para todas las vigas.
+   * Llamado bajo demanda desde el toggle "Vigas en arista" en ui.js.
+   * @param {boolean} build - true para crear, false para eliminar
+   */
+  buildBeamEdgeLines(build) {
+    const toAdd = [];
+    const toRemove = [];
 
+    for (const obj of this.group.children) {
+      if (!obj) continue;
+      if (build && obj.userData && obj.userData.isBeam && obj.userData._beamGeomRef) {
+        // Crear EdgesGeometry para esta viga si no existe ya
+        if (!obj.userData._edgeLinesBuilt) {
+          const edgeLines = new THREE.LineSegments(
+            new THREE.EdgesGeometry(obj.userData._beamGeomRef, 15),
+            this.matBeamEdge
+          );
+          edgeLines.visible = true;
+          edgeLines.userData.isBeamEdge = true;
+          edgeLines.name = `beamEdge_${obj.name}`;
+          toAdd.push(edgeLines);
+          obj.userData._edgeLinesBuilt = true;
+        }
+      }
+      if (!build && obj.userData && obj.userData.isBeamEdge) {
+        toRemove.push(obj);
+      }
+    }
+
+    for (const ls of toAdd) this.group.add(ls);
+    for (const ls of toRemove) {
+      if (ls.geometry) try { ls.geometry.dispose(); } catch(e) {}
+      this.group.remove(ls);
+    }
+
+    // Limpiar flag de built en vigas al destruir
+    if (!build) {
+      for (const obj of this.group.children) {
+        if (obj && obj.userData && obj.userData.isBeam) {
+          obj.userData._edgeLinesBuilt = false;
+        }
+      }
+    }
+  }
+
+  /**
+   * Crea la geometría de una pletina de anclaje.
+   * Todo en el espacio del structureGroup (igual que vigas y conectores).
+   * Sin conversión de coordenadas.
+   *
+   * @param {THREE.Vector3} startPt   - Punto de inicio en superficie del cilindro
+   * @param {THREE.Vector3} outDir    - Dirección longitudinal (alejándose del cilindro, _e)
+   * @param {THREE.Vector3} thickDir  - Dirección del espesor (_w, lateral de la viga)
+   * @param {THREE.Vector3} heightDir - Dirección del alto (_t, hacia interior de la viga)
+   * @param {number} length           - Largo de la pletina (m)
+   * @param {number} height           - Alto de la pletina (m) en dirección heightDir
+   * @param {number} thick            - Espesor de la pletina (m) centrado en thickDir
+   * @param {{n,origin,d}|null} bevelPlane - Plano de bisel en la testa que toca el cilindro
+   */
+  _createBeveledPletinaGeometry(startPt, outDir, thickDir, heightDir, length, height, thick, bevelPlane) {
+    try {
+      const o  = outDir.clone().normalize();    // longitudinal
+      const wd = thickDir.clone().normalize();  // espesor (_w)
+      const td = heightDir.clone().normalize(); // alto (_t)
       const halfThick = thick / 2;
+
       const endPt = startPt.clone().addScaledVector(o, length);
 
-      // 4 esquinas del perfil en el extremo FIN (testa recta)
-      const endCorners = [
+      // 4 esquinas del prisma base en cada testa (sin bisel aún)
+      // Convención idéntica a las vigas:
+      //   0: -wd, t=0   (exterior, -espesor)
+      //   1: +wd, t=0   (exterior, +espesor)
+      //   2: +wd, t=h   (interior, +espesor)
+      //   3: -wd, t=h   (interior, -espesor)
+      const cornersA = [
+        startPt.clone().addScaledVector(wd, -halfThick),
+        startPt.clone().addScaledVector(wd, +halfThick),
+        startPt.clone().addScaledVector(wd, +halfThick).addScaledVector(td, height),
+        startPt.clone().addScaledVector(wd, -halfThick).addScaledVector(td, height),
+      ];
+      const cornersB = [
         endPt.clone().addScaledVector(wd, -halfThick),
         endPt.clone().addScaledVector(wd, +halfThick),
         endPt.clone().addScaledVector(wd, +halfThick).addScaledVector(td, height),
         endPt.clone().addScaledVector(wd, -halfThick).addScaledVector(td, height),
       ];
 
-      // 4 esquinas del perfil en el extremo INICIO: biselado con el plano del cilindro
-      const startCorners = endCorners.map(ec => {
-        const candidate = ec.clone().addScaledVector(o, -length);
-        return intersectRayPlane(candidate, o, bevelPlane);
-      });
-
-      // Convertir coordenadas mundiales → locales del conector:
-      // local = invQuat * (world - connectorPos)
-      const invQuat = connectorWorldQuat.clone().invert();
-      const toLocal = (pt) => {
-        const v = pt.clone().sub(connectorWorldPos);
-        v.applyQuaternion(invQuat);
-        return v;
+      // Intersectar cada arista longitudinal con el plano de bisel → testa A biselada
+      const intersectEdge = (Apt, Bpt, plane) => {
+        if (!plane) return Apt.clone();
+        const AB = Bpt.clone().sub(Apt);
+        const denom = plane.n.dot(AB);
+        if (Math.abs(denom) < 1e-10) return Apt.clone();
+        const t = (plane.d - plane.n.dot(Apt.clone().sub(plane.origin))) / denom;
+        return Apt.clone().addScaledVector(AB, Math.max(0, Math.min(1, t)));
       };
 
-      const verts = [
-        ...startCorners.map(toLocal),   // 0-3: testa inicio (biselada)
-        ...endCorners.map(toLocal),     // 4-7: testa fin (recta)
-      ];
+      // startPts: testa biselada (toca cilindro) | endPts: testa libre (recta)
+      const startPts = cornersA.map((ca, i) => intersectEdge(ca, cornersB[i], bevelPlane));
+      const endPts   = cornersB.slice();
+
+      // Validación: la pletina no debe quedar invertida
+      const avgS = startPts.reduce((s, p) => s + o.dot(p), 0) / 4;
+      const avgE = endPts.reduce((s, p)   => s + o.dot(p), 0) / 4;
+      if (avgE - avgS < thick * 0.1) return null;
+
+      // 8 vértices: 0-3 testa bisel (inicio), 4-7 testa libre (fin)
+      const verts = [...startPts, ...endPts];
 
       const positions = new Float32Array(8 * 3);
       for (let i = 0; i < 8; i++) {
@@ -1218,13 +1266,14 @@ export class StructureGenerator {
         positions[i * 3 + 2] = verts[i].z;
       }
 
+      // 12 triángulos (mismo winding que vigas, normales hacia exterior)
       const indices = [
-        0, 3, 2,  0, 2, 1,   // testa inicio (biselada)
-        4, 5, 6,  4, 6, 7,   // testa fin
-        0, 4, 7,  0, 7, 3,   // cara -wd
-        1, 2, 6,  1, 6, 5,   // cara +wd
-        0, 1, 5,  0, 5, 4,   // cara exterior (t=0)
-        3, 7, 6,  3, 6, 2,   // cara interior (t=height)
+        0, 1, 2,  0, 2, 3,   // testa bisel  (mira -o)
+        4, 6, 5,  4, 7, 6,   // testa libre  (mira +o)
+        0, 4, 5,  0, 5, 1,   // cara exterior (t=0)
+        1, 5, 6,  1, 6, 2,   // cara +wd
+        2, 6, 7,  2, 7, 3,   // cara interior (t=h)
+        3, 7, 4,  3, 4, 0,   // cara -wd
       ];
 
       const g = new THREE.BufferGeometry();
@@ -1232,6 +1281,23 @@ export class StructureGenerator {
       g.setIndex(indices);
       g.computeVertexNormals();
       g.computeBoundingSphere();
+
+      // 6 caras QUAD para export OBJ (vértices en espacio structureGroup, índices base-0)
+      // El exportador aplica matrixWorld del mesh de pletina = identidad (está en el grupo)
+      g.userData.objVertices = verts;
+      // Winding CCW con normales hacia exterior (regla mano derecha).
+      // Convención de vértices:
+      //   0(-wd,t=0) 1(+wd,t=0) 2(+wd,t=h) 3(-wd,t=h)  ← testa bisel (lado cilindro)
+      //   4(-wd,t=0) 5(+wd,t=0) 6(+wd,t=h) 7(-wd,t=h)  ← testa libre
+      g.userData.objFaces = [
+        [0, 1, 2, 3],   // testa bisel  → normal -o (hacia cilindro)
+        [4, 7, 6, 5],   // testa libre  → normal +o (hacia exterior)
+        [0, 4, 5, 1],   // cara t=0     → normal -td
+        [1, 5, 6, 2],   // cara +wd     → normal +wd
+        [3, 7, 6, 2],   // cara t=h     → normal +td  (invertido respecto a vigas: simetría de o)
+        [0, 3, 7, 4],   // cara -wd     → normal -wd
+      ];
+
       return g;
     } catch (e) {
       return null;

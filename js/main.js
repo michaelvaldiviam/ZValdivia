@@ -43,6 +43,10 @@ class App {
 
     this.uiManager.initialize();
     this.setupThemeToggle();
+    // Actualizar botones después de initialize si hay config compartida
+    if (this._sharedConfigLoaded && this.uiManager.updateAllButtons) {
+      this.uiManager.updateAllButtons();
+    }
     this.sceneManager.render();
   }
 
@@ -50,7 +54,7 @@ class App {
     // Tiempo mínimo de visualización de la pantalla de carga (estética)
     // En móviles la primera pintura puede ser muy rápida; dejamos un mínimo
     // más cómodo para que el usuario alcance a ver el logo.
-    return new Promise((resolve) => setTimeout(resolve, 2200));
+    return new Promise((resolve) => setTimeout(resolve, 800));
   }
 
   setupNodePDFButton() {
@@ -138,11 +142,8 @@ class App {
     const loaded = this.shareManager.loadFromURL();
     if (loaded) {
       console.log('Configuracion cargada desde URL');
-      setTimeout(() => {
-        if (this.uiManager.updateAllButtons) {
-          this.uiManager.updateAllButtons();
-        }
-      }, 100);
+      // updateAllButtons se llama después de initialize() en initApp()
+      this._sharedConfigLoaded = true;
     }
   }
 

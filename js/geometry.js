@@ -1,6 +1,12 @@
 import * as THREE from 'three';
 import { state, getColorForLevel } from './state.js';
 
+// Cache de materiales por nivel para evitar recrearlos en cada rebuild.
+// Se invalida automáticamente cuando N o los colores cambian (clave incluye N y color).
+const _levelMatCache = new Map();
+
+// Cache de materiales por nivel para evitar recrearlos en cada rebuild
+
 /**
  * Calcula el vertice de un anillo en la posicion (k, i)
  * @param {number} k - Nivel del anillo
@@ -203,23 +209,27 @@ export function createRhombi(rhombiGroup, matRhombus) {
     const levelRhombi = [];
     const vertices = [];
 
-    // Material por nivel
+    // Material por nivel: reusar cacheado si existe (evita recrear en cada rebuild)
     let levelMaterial;
     if (colorByLevel) {
       const levelColor = getColorForLevel(k, totalLevels);
-      levelMaterial = new THREE.MeshPhysicalMaterial({
-        color: levelColor,
-        metalness: 0.7,
-        roughness: 0.15,
-        transmission: 0.0,
-        clearcoat: 1.0,
-        clearcoatRoughness: 0.1,
-        side: THREE.DoubleSide,
-        flatShading: true,
-      });
-      // Marcar como material temporal (uno por nivel) para facilitar
-      // trazabilidad y dispose correcto al limpiar el grupo.
-      levelMaterial.userData._zvLevelMat = true;
+      const cacheKey = `${k}_${totalLevels}_${levelColor}`;
+      if (_levelMatCache.has(cacheKey)) {
+        levelMaterial = _levelMatCache.get(cacheKey);
+      } else {
+        levelMaterial = new THREE.MeshPhysicalMaterial({
+          color: levelColor,
+          metalness: 0.7,
+          roughness: 0.15,
+          transmission: 0.0,
+          clearcoat: 1.0,
+          clearcoatRoughness: 0.1,
+          side: THREE.DoubleSide,
+          flatShading: true,
+        });
+        levelMaterial.userData._zvLevelMat = true;
+        _levelMatCache.set(cacheKey, levelMaterial);
+      }
     } else {
       levelMaterial = matRhombus;
     }
