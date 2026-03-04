@@ -4,6 +4,7 @@ import { OBJExporter } from './export.js';
 import { PDFReporter } from './pdf-report.js';
 import { NodePDFReporter } from './node-pdf-report.js';
 import { BeamPDFReporter } from './beam-pdf-report.js';
+import { PinwheelPDFReporter } from './pinwheel-pdf.js';
 import { ShareManager } from './share.js';
 import { state, rhombiData } from './state.js';
 
@@ -39,6 +40,7 @@ class App {
     this.setupPDFButton();
     this.setupNodePDFButton();
     this.setupBeamsPDFButton();
+    this.setupPinwheelPDFButton();
     this.setupShareButtons();
 
     this.uiManager.initialize();
@@ -162,6 +164,26 @@ class App {
         this.uiManager.showNotification(`Archivo OBJ exportado exitosamente (${totalFaces} caras)`, 'success');
       });
     }
+
+
+    const exportMeshObjBtn = document.getElementById('exportMeshObjBtn');
+    if (exportMeshObjBtn) {
+      exportMeshObjBtn.addEventListener('click', () => {
+        if (!state.rhombiVisible || rhombiData.length === 0) {
+          this.uiManager.showNotification('Debes activar las caras primero para exportar la malla');
+          return;
+        }
+        try {
+          OBJExporter.exportMeshFacesGroupedToOBJ();
+          const totalFaces = rhombiData.reduce((sum, level) => sum + level.rhombi.length, 0);
+          this.uiManager.showNotification(`OBJ malla exportado (grupos por cara): ${totalFaces} caras`, 'success');
+        } catch (e) {
+          console.error('Error exportando OBJ malla:', e);
+          this.uiManager.showNotification('Error exportando OBJ malla', 'error');
+        }
+      });
+    }
+
   }
 
   setupPDFButton() {
@@ -186,6 +208,28 @@ class App {
         } catch (error) {
           console.error('Error generando PDF:', error);
           this.uiManager.showNotification('Error al generar el reporte PDF', 'error');
+        }
+      });
+    }
+  }
+
+
+  setupPinwheelPDFButton() {
+    const btn = document.getElementById('exportPinwheelPdfBtn');
+    if (btn) {
+      btn.addEventListener('click', async () => {
+        if (!state.rhombiVisible || rhombiData.length === 0) {
+          this.uiManager.showNotification('Activa las caras (rombos) primero para generar el remolino', 'warning');
+          return;
+        }
+        this.uiManager.showNotification('Generando PDF Remolino...', 'info');
+        await new Promise(resolve => setTimeout(resolve, 300));
+        try {
+          await PinwheelPDFReporter.generateReport();
+          this.uiManager.showNotification('PDF Remolino generado', 'success');
+        } catch (err) {
+          console.error('Error generando PDF Remolino:', err);
+          this.uiManager.showNotification('Error al generar el PDF Remolino', 'error');
         }
       });
     }

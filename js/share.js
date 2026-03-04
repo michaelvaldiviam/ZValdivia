@@ -51,6 +51,15 @@ export class ShareManager {
         }
       }
 
+      // BUG-M1 fix: también serializar overrides de conectores de intersección (antes se leía 'cio' pero nunca se escribía)
+      if (state.structureIntersectionConnectorOverrides && Object.keys(state.structureIntersectionConnectorOverrides).length > 0) {
+        try {
+          params.set('cio', encodeURIComponent(JSON.stringify(state.structureIntersectionConnectorOverrides)));
+        } catch (e) {
+          // ignorar si falla
+        }
+      }
+
       // Overrides / ediciones de estructura (vigas/caras extra/eliminadas)
       // Siempre se serializan si existen, independientemente de connector overrides
       const safeSetJSON = (key, value) => {
@@ -78,7 +87,7 @@ export class ShareManager {
     
     if (params.size === 0) return false;
 
-    if (params.has('N')) state.N = Math.max(3, Math.min(100, parseInt(params.get('N'))));
+    if (params.has('N')) state.N = Math.max(3, Math.min(50, parseInt(params.get('N'))));
     if (params.has('a')) state.aDeg = Math.max(0.1, Math.min(89.9, parseFloat(params.get('a'))));
     if (params.has('Dmax')) state.Dmax = Math.max(0.1, parseFloat(params.get('Dmax')));
     
@@ -292,9 +301,17 @@ export class ShareManager {
             throw new Error('Archivo JSON invalido');
           }
 
-          state.N = Math.max(3, Math.min(100, config.parameters.N));
-          state.aDeg = Math.max(0.1, Math.min(89.9, config.parameters.aDeg));
-          state.Dmax = Math.max(0.1, config.parameters.Dmax);
+          // MEJ-11: Validar que los campos numéricos sean finitos y positivos
+          const safeNum = (v, min, max, fallback) => {
+            const n = Number(v);
+            if (!isFinite(n)) return fallback;
+            if (min != null && n < min) return min;
+            if (max != null && n > max) return max;
+            return n;
+          };
+          state.N = safeNum(config.parameters.N, 3, 50, state.N);
+          state.aDeg = safeNum(config.parameters.aDeg, 0.1, 89.9, state.aDeg);
+          state.Dmax = safeNum(config.parameters.Dmax, 0.01, null, state.Dmax);
           
           state.cutActive = config.cut.active;
           state.cutLevel = Math.max(1, Math.min(state.N - 1, config.cut.level));

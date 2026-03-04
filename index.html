@@ -137,8 +137,8 @@
 <div class="param-control">
 <label class="param-label">N (Lados)</label>
 <div class="param-inputs">
-<input class="param-number" id="nNum" max="100" min="3" step="1" type="number" value="11"/>
-<input class="param-slider" id="nRange" max="100" min="3" step="1" type="range" value="11"/>
+<input class="param-number" id="nNum" max="50" min="3" step="1" type="number" value="11"/>
+<input class="param-slider" id="nRange" max="50" min="3" step="1" type="range" value="11"/>
 </div>
 </div>
 <div class="param-control">
@@ -478,7 +478,23 @@
 <path d="M6 18h12"></path>
 </svg>
 <span>PDF Conectores</span>
-</button><button class="action-button primary" id="exportStructureObjBtn" style="margin-top: 10px;">
+</button><button class="action-button" id="exportPinwheelPdfBtn" style="margin-top: 8px;">
+<svg fill="none" height="16" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24" width="16">
+<path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z"/>
+<path d="M12 12 L12 5 A7 7 0 0 1 17 7 Z"/>
+<path d="M12 12 L17 7 A7 7 0 0 1 19 12 Z"/>
+<path d="M12 12 L19 12 A7 7 0 0 1 15 17 Z"/>
+</svg>
+<span>PDF Remolino Caras</span>
+</button><button class="action-button" id="exportMeshObjBtn" style="margin-top: 10px;">
+<svg fill="none" height="16" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24" width="16">
+<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+<polyline points="7 10 12 15 17 10"></polyline>
+<line x1="12" x2="12" y1="15" y2="3"></line>
+</svg>
+<span>OBJ malla (caras)</span>
+</button>
+<button class="action-button primary" id="exportStructureObjBtn" style="margin-top: 10px;">
 <svg fill="none" height="16" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24" width="16">
 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
 <polyline points="7 10 12 15 17 10"></polyline>

@@ -89,7 +89,7 @@ export class OBJExporter {
       vertexOffset = currentVertex;
     }
 
-    if (state.cutActive) {
+        if (state.cutActive) {
       lines.push(`# Cut cap at level K=${state.cutLevel}`);
       lines.push(`o CutCap`);
       lines.push(`g CutCap`);
@@ -98,34 +98,44 @@ export class OBJExporter {
       const { N, h1, cutLevel } = state;
       const z = cutLevel * h1;
 
-      lines.push(`v 0.000000 0.000000 ${z.toFixed(6)}`);
-
+      // Radio del polígono regular de N lados para el nivel del corte
       const Rk = (state.Dmax / 2) * Math.sin((cutLevel * Math.PI) / N);
+
+      // La tapa es un polígono regular: exportamos un solo "face" con N vértices (ngon).
+      // Nota: ordenamos los vértices para que la normal apunte hacia -Z (abajo).
       const step = (2 * Math.PI) / N;
       const halfStep = Math.PI / N;
       const startAngle = -Math.PI / 2;
       const rotOffset = (cutLevel % 2 === 0) ? halfStep : 0;
 
+      // 1) Vertices (solo anillo, sin punto central)
+      lines.push(`# Cap vertices (regular N-gon)`);
+      const capVertexStart = vertexOffset; // índice 1-based en OBJ
       for (let i = 0; i < N; i++) {
         const theta = startAngle + rotOffset + i * step;
         lines.push(`v ${(Rk * Math.cos(theta)).toFixed(6)} ${(Rk * Math.sin(theta)).toFixed(6)} ${z.toFixed(6)}`);
       }
       lines.push('');
 
-      const capVertexCount = N + 1;
-      for (let i = 0; i < capVertexCount; i++) {
+      // 2) Normales (una por vértice, siguiendo el mismo esquema de índices v<->vn)
+      lines.push(`# Cap normals`);
+      for (let i = 0; i < N; i++) {
         lines.push(`vn 0.000000 0.000000 -1.000000`);
       }
       lines.push('');
 
-      lines.push(`# Cap triangular faces`);
-      for (let i = 0; i < N; i++) {
-        const vCenter = vertexOffset;
-        const v1 = vertexOffset + 1 + i;
-        const v2 = vertexOffset + 1 + ((i + 1) % N);
-        lines.push(`f ${vCenter}//${vCenter} ${v1}//${v1} ${v2}//${v2}`);
+      // 3) Cara (ngon)
+      lines.push(`# Cap face (ngon)`);
+      // BUG-L5: índices en orden inverso (CCW visto desde -Z) → normal -Z es correcta por regla de mano derecha
+      const faceIdx = [];
+      for (let i = N - 1; i >= 0; i--) {
+        const vi = capVertexStart + i;
+        faceIdx.push(`${vi}//${vi}`);
       }
+      lines.push(`f ${faceIdx.join(' ')}`);
       lines.push('');
+
+      vertexOffset = capVertexStart + N;
     }
 
     lines.push('# Export Summary');
@@ -138,6 +148,121 @@ export class OBJExporter {
 
     this.downloadOBJ(lines.join('\n'));
   }
+
+
+  /**
+   * Exporta la malla del zonohedro a OBJ colocando CADA cara (rombo o triángulo) en su propio grupo `g`.
+   * - Un solo archivo OBJ
+   * - Cada cara duplica sus vértices (simple y robusto; evita deduplicación compleja)
+   * - Incluye triángulos de tapa de corte (CutCap) si el corte está activo
+   */
+  static exportMeshFacesGroupedToOBJ() {
+    const lines = [];
+    lines.push('# ZValdivia - Zonohedro Mesh OBJ (Faces Grouped)');
+    lines.push(`# Generated: ${new Date().toISOString()}`);
+    lines.push(`# Parameters: Dmax=${state.Dmax}, N=${state.N}, Angle=${state.aDeg}deg`);
+    if (state.cutActive) lines.push(`# Cut plane active at level K=${state.cutLevel}`);
+    lines.push('');
+
+    let vOffset = 1;
+
+    const _e1 = new THREE.Vector3();
+    const _e2 = new THREE.Vector3();
+    const _n  = new THREE.Vector3();
+
+    for (const levelData of rhombiData) {
+      const faces = levelData && levelData.rhombi ? levelData.rhombi : [];
+      let localIdx = 0;
+      for (const face of faces) {
+        const isTri = !!face.isTriangle;
+        const vCount = isTri ? 3 : 4;
+
+        // Grupo por cara
+        const gName = `${levelData.name || ('Level_' + levelData.level)}_${isTri ? 'tri' : 'rh'}_${localIdx++}`;
+        lines.push(`g ${gName}`);
+
+        // Vértices (duplicados por cara)
+        for (let i = 0; i < vCount; i++) {
+          const v = face.vertices[i];
+          lines.push(`v ${v.x.toFixed(6)} ${v.y.toFixed(6)} ${v.z.toFixed(6)}`);
+        }
+
+        // Normal por vértice
+        const v0 = face.vertices[0];
+        const v1 = face.vertices[1];
+        const v2 = face.vertices[2];
+        _e1.subVectors(v1, v0);
+        _e2.subVectors(v2, v0);
+        _n.crossVectors(_e1, _e2).normalize();
+
+        for (let i = 0; i < vCount; i++) {
+          lines.push(`vn ${_n.x.toFixed(6)} ${_n.y.toFixed(6)} ${_n.z.toFixed(6)}`);
+        }
+
+        // Cara (v//vn), índices alineados porque duplicamos 1:1
+        const idxs = [];
+        for (let i = 0; i < vCount; i++) {
+          const vi = vOffset + i;
+          idxs.push(`${vi}//${vi}`);
+        }
+        lines.push(`f ${idxs.join(' ')}`);
+        lines.push('');
+        vOffset += vCount;
+      }
+    }
+
+    // Tapa de corte como triángulos (opcional) cada uno en su grupo
+    if (state.cutActive) {
+      const { N, h1, cutLevel } = state;
+      const z = cutLevel * h1;
+
+      const Rk = (state.Dmax / 2) * Math.sin((cutLevel * Math.PI) / N);
+      const step = (2 * Math.PI) / N;
+      const halfStep = Math.PI / N;
+      const startAngle = -Math.PI / 2;
+      const rotOffset = (cutLevel % 2 === 0) ? halfStep : 0;
+
+      // Centro
+      const center = new THREE.Vector3(0, 0, z);
+      const ring = [];
+      for (let i = 0; i < N; i++) {
+        const theta = startAngle + rotOffset + i * step;
+        ring.push(new THREE.Vector3(Rk * Math.cos(theta), Rk * Math.sin(theta), z));
+      }
+
+      // BUG-L5 fix: normal del cap coherente con el winding de vértices.
+      // El ring se construye en orden CCW visto desde +Z, por lo que por regla de la mano derecha
+      // la normal apunta hacia +Z. El código anterior declaraba -Z pero el winding producía +Z.
+      const capN = new THREE.Vector3(0, 0, 1);
+
+      for (let i = 0; i < N; i++) {
+        const gName = `CutCap_tri_${i}`;
+        lines.push(`g ${gName}`);
+
+        const v1 = ring[i];
+        const v2 = ring[(i + 1) % N];
+
+        // v
+        for (const v of [center, v1, v2]) {
+          lines.push(`v ${v.x.toFixed(6)} ${v.y.toFixed(6)} ${v.z.toFixed(6)}`);
+        }
+        // vn
+        for (let k = 0; k < 3; k++) {
+          lines.push(`vn ${capN.x.toFixed(6)} ${capN.y.toFixed(6)} ${capN.z.toFixed(6)}`);
+        }
+        // f
+        const a = vOffset;
+        const b = vOffset + 1;
+        const c = vOffset + 2;
+        lines.push(`f ${a}//${a} ${b}//${b} ${c}//${c}`);
+        lines.push('');
+        vOffset += 3;
+      }
+    }
+
+    this.downloadOBJ(lines.join('\n'));
+  }
+
 
   static downloadOBJ(content) {
     const blob = new Blob([content], { type: 'application/octet-stream' });
@@ -183,8 +308,56 @@ export class StructureOBJExporter {
     let meshCounter = 0;
 
     structureGroup.traverse((child) => {
-      if (!child || !child.isMesh) return;
+      if (!child) return;
+
+      // ── InstancedMesh (batch de conectores) ────────────────────────────────
+      if (child.isInstancedMesh && child.userData && child.userData.isConnectorBatch) {
+        if (child.visible === false) return;
+        try { child.updateWorldMatrix(true, false); } catch(e) {}
+        const count = child.count;
+        const geom = child.geometry;
+        const pos = geom && geom.attributes && geom.attributes.position;
+        if (!pos) return;
+
+        for (let inst = 0; inst < count; inst++) {
+          const m4 = new THREE.Matrix4();
+          child.getMatrixAt(inst, m4);
+          // Combinar con matrixWorld del grupo
+          const worldM4 = child.matrixWorld.clone().multiply(m4);
+
+          const instVerts = [];
+          for (let vi = 0; vi < pos.count; vi++) {
+            const p = new THREE.Vector3().fromBufferAttribute(pos, vi).applyMatrix4(worldM4);
+            instVerts.push(p);
+          }
+
+          const instName = `connector_inst_${meshCounter++}`;
+          lines.push(`o ${instName}`);
+          lines.push(`g ${instName}`);
+          for (const p of instVerts) {
+            lines.push(`v ${p.x.toFixed(6)} ${p.y.toFixed(6)} ${p.z.toFixed(6)}`);
+          }
+          lines.push('');
+
+          const idx = geom.index;
+          if (idx && idx.count >= 3) {
+            for (let i = 0; i < idx.count; i += 3) {
+              lines.push(`f ${vOffset + idx.getX(i)} ${vOffset + idx.getX(i+1)} ${vOffset + idx.getX(i+2)}`);
+            }
+          } else {
+            for (let i = 0; i + 2 < instVerts.length; i += 3) {
+              lines.push(`f ${vOffset + i} ${vOffset + i + 1} ${vOffset + i + 2}`);
+            }
+          }
+          lines.push('');
+          vOffset += instVerts.length;
+        }
+        return;
+      }
+
+      if (!child.isMesh) return;
       if (child.userData && child.userData.isBeamEdge) return; // skip edge-only lines
+      if (child.visible === false) return; // skip hidden meshes (orphan connectors, etc.)
       const mesh = child;
       const name = (mesh.name && mesh.name.trim()) ? mesh.name : `mesh_${meshCounter++}`;
       lines.push(`o ${name}`);

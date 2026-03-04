@@ -1,9 +1,35 @@
 import * as THREE from 'three';
 import { state, getColorForLevel } from './state.js';
 
-// Cache de materiales por nivel para evitar recrearlos en cada rebuild.
-// Se invalida automáticamente cuando N o los colores cambian (clave incluye N y color).
-const _levelMatCache = new Map();
+// Cache LRU de materiales por nivel (max 60 entradas) — BUG-C2/MEJ-1 fix.
+// Al desalojar entradas antiguas se llama dispose() para liberar memoria GPU.
+// La clave incluye N, totalLevels y color para invalidación automática.
+const _LEVEL_MAT_CACHE_MAX = 60;
+const _levelMatCache = new Map(); // insertion-order = LRU
+
+function _levelMatCacheGet(key) {
+  if (!_levelMatCache.has(key)) return undefined;
+  // Renovar posición (move-to-end)
+  const mat = _levelMatCache.get(key);
+  _levelMatCache.delete(key);
+  _levelMatCache.set(key, mat);
+  return mat;
+}
+
+function _levelMatCacheSet(key, mat) {
+  if (_levelMatCache.has(key)) {
+    _levelMatCache.delete(key);
+  } else if (_levelMatCache.size >= _LEVEL_MAT_CACHE_MAX) {
+    // Desalojar la entrada más antigua (primera del Map)
+    const oldestKey = _levelMatCache.keys().next().value;
+    const oldMat = _levelMatCache.get(oldestKey);
+    _levelMatCache.delete(oldestKey);
+    if (oldMat && typeof oldMat.dispose === 'function') {
+      try { oldMat.dispose(); } catch (e) {}
+    }
+  }
+  _levelMatCache.set(key, mat);
+}
 
 // Cache de materiales por nivel para evitar recrearlos en cada rebuild
 
@@ -35,24 +61,28 @@ export function createPolygons(polygonsGroup, matPolyLine, matPolyFill) {
   const { N, h1, cutActive, cutLevel } = state;
   const startK = cutActive ? cutLevel : 1;
 
-  // Merge todas las lineas en una sola geometria
-  const allLinePoints = [];
-  
+  // BUG-M2 fix: usar LineLoop por anillo (dibuja el polígono cerrado completo).
+  // Antes se usaba LineSegments con N+1 puntos, que sólo dibuja N/2 segmentos.
   for (let k = startK; k < N; k++) {
-    for (let i = 0; i <= N; i++) {
-      allLinePoints.push(getRingVertex(k, i % N));
+    const ringPts = [];
+    for (let i = 0; i < N; i++) {
+      ringPts.push(getRingVertex(k, i));
     }
+    const ringGeom = new THREE.BufferGeometry().setFromPoints(ringPts);
+    ringGeom.attributes.position.usage = THREE.StaticDrawUsage;
+    polygonsGroup.add(new THREE.LineLoop(ringGeom, matPolyLine));
   }
 
+  // Anillo extra del plano de corte
   if (cutActive) {
-    for (let i = 0; i <= N; i++) {
-      allLinePoints.push(getRingVertex(cutLevel, i % N));
+    const capPts = [];
+    for (let i = 0; i < N; i++) {
+      capPts.push(getRingVertex(cutLevel, i));
     }
+    const capGeom = new THREE.BufferGeometry().setFromPoints(capPts);
+    capGeom.attributes.position.usage = THREE.StaticDrawUsage;
+    polygonsGroup.add(new THREE.LineLoop(capGeom, matPolyLine));
   }
-
-  const lineGeom = new THREE.BufferGeometry().setFromPoints(allLinePoints);
-  lineGeom.attributes.position.usage = THREE.StaticDrawUsage;
-  polygonsGroup.add(new THREE.LineSegments(lineGeom, matPolyLine));
 
   // Fill triangulation - merged en una sola geometria
   const allFillPositions = [];
@@ -214,8 +244,9 @@ export function createRhombi(rhombiGroup, matRhombus) {
     if (colorByLevel) {
       const levelColor = getColorForLevel(k, totalLevels);
       const cacheKey = `${k}_${totalLevels}_${levelColor}`;
-      if (_levelMatCache.has(cacheKey)) {
-        levelMaterial = _levelMatCache.get(cacheKey);
+      levelMaterial = _levelMatCacheGet(cacheKey);
+      if (levelMaterial !== undefined) {
+        // hit: already set by _levelMatCacheGet
       } else {
         levelMaterial = new THREE.MeshPhysicalMaterial({
           color: levelColor,
@@ -228,7 +259,7 @@ export function createRhombi(rhombiGroup, matRhombus) {
           flatShading: true,
         });
         levelMaterial.userData._zvLevelMat = true;
-        _levelMatCache.set(cacheKey, levelMaterial);
+        _levelMatCacheSet(cacheKey, levelMaterial);
       }
     } else {
       levelMaterial = matRhombus;

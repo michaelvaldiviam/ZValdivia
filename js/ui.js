@@ -135,6 +135,9 @@ export class UIManager {
     this._multiSelectedBeams = [];    // Array de { mesh, edgeKey, outlineMesh }
     this._multiSelectFloatEl = null;
     this._multiSelectToastEl = null;
+
+    // BUG-L2 / MEJ-8: Contador FPS — requiere elemento #fpsCounter en HTML
+    this.fpsCounter = document.getElementById('fpsCounter') || null;
   }
 
   setupCollapsibleGroups() {
@@ -242,7 +245,8 @@ export class UIManager {
       if (closed) return;
       closed = true;
       // Animación de salida
-      notification.style.animation = 'slideIn 0.3s ease-out reverse';
+      // BUG-L1 fix: fill-mode forwards evita el flash al volver al estado "visible" antes del removeChild
+      notification.style.animation = 'slideIn 0.3s ease-out reverse forwards';
       setTimeout(() => {
         try { if (notification.parentNode) notification.parentNode.removeChild(notification); } catch(e){}
         try { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); } catch(e){}
@@ -602,7 +606,7 @@ _clearConnectorTooltipAndSelection() {
 
 _structureIsGenerated() {
   try {
-    return !!(this.sceneManager && this.sceneManager.structureGroup && this.sceneManager.structureGroup.children && this.sceneManager.structureGroup.children.some(o => o && o.userData && o.userData.isConnector));
+    return !!(this.sceneManager && this.sceneManager.structureGroup && this.sceneManager.structureGroup.children && this.sceneManager.structureGroup.children.some(o => o && o.userData && (o.userData.isConnector || o.userData.isConnectorBatch)));
   } catch (e) {
     return false;
   }
@@ -2232,9 +2236,34 @@ _updateConnectorTooltipPosition() {
     // Título / subtítulo informativo
     const mesh = hit.mesh;
     const info = (mesh && mesh.userData && mesh.userData.beamInfo) ? mesh.userData.beamInfo : {};
-    const aName = info && info.a ? info.a.name : null;
-    const bName = info && info.b ? info.b.name : null;
-    const connectTxt = (aName && bName) ? `${aName} ↔ ${bName}` : '';
+
+    // Mostrar conectores en el mismo orden que el PDF de vigas:
+    // izquierda = nivel mas abajo (kLo), derecha = nivel mas arriba (kHi).
+    // Para kLo==kHi (vigas horizontales / piso con corte) el PDF muestra kX ↔ kX.
+    const aNameRaw = info && info.a ? info.a.name : null;
+    const bNameRaw = info && info.b ? info.b.name : null;
+    const pair = (typeof BeamPDFReporter !== 'undefined' && BeamPDFReporter && typeof BeamPDFReporter._normalizeConnPair === 'function')
+      ? BeamPDFReporter._normalizeConnPair(info)
+      : null;
+
+    // Mostrar niveles VISIBLES al usuario (misma logica que PDF de vigas).
+    // - Con corte activo: kVisible = kOriginal - cutLevel (clamp a >=0)
+    // - Sin corte: kVisible = kOriginal
+    // Para conectores especiales (X / polos) usamos el formateador visible del PDF.
+    const aKey = info ? info.aKey : null;
+    const bKey = info ? info.bKey : null;
+    const hasPdfFormat = (typeof BeamPDFReporter !== 'undefined' && BeamPDFReporter && typeof BeamPDFReporter._formatConnectorKeyVisible === 'function');
+    const isSpecialA = (typeof aKey === 'string') && (aKey.startsWith('X:') || aKey === 'pole_low' || aKey === 'pole_top');
+    const isSpecialB = (typeof bKey === 'string') && (bKey.startsWith('X:') || bKey === 'pole_low' || bKey === 'pole_top');
+
+    const leftName = (pair && Number.isFinite(pair.kLo) && typeof BeamPDFReporter._toVisibleK === 'function')
+      ? `k${BeamPDFReporter._toVisibleK(pair.kLo)}`
+      : (isSpecialA && hasPdfFormat ? BeamPDFReporter._formatConnectorKeyVisible(aKey) : (aNameRaw || ''));
+
+    const rightName = (pair && Number.isFinite(pair.kHi) && typeof BeamPDFReporter._toVisibleK === 'function')
+      ? `k${BeamPDFReporter._toVisibleK(pair.kHi)}`
+      : (isSpecialB && hasPdfFormat ? BeamPDFReporter._formatConnectorKeyVisible(bKey) : (bNameRaw || ''));
+    const connectTxt = (leftName && rightName) ? `${leftName} ↔ ${rightName}` : '';
     const lenMm = (mesh && typeof BeamPDFReporter._beamLengthWorld === 'function') ? Math.round(BeamPDFReporter._beamLengthWorld(mesh) * 1000) : null;
 
     if (this._beamViewerTitleEl) this._beamViewerTitleEl.textContent = 'Ver viga (aislada)';
@@ -2377,6 +2406,20 @@ _updateConnectorTooltipPosition() {
     const mT = new THREE.Matrix4().makeTranslation(-basis.c.x, -basis.c.y, -basis.c.z);
     const mWorldToCanon = mInv.clone().multiply(mT);
 
+    // Determinar qué lado (±Z canónico) corresponde al ANCHO EXTERIOR (cara por donde pasa la arista).
+    // En el sistema canónico: x=e, y=w, z=t. El "exterior" debe quedar hacia la cámara en Planta,
+    // y hacia arriba en Lateral / Rotación libre.
+    let _outerSign = -1;
+    try {
+      const outerIdx = (info && info.faces && Array.isArray(info.faces.outer)) ? info.faces.outer
+        : (Array.isArray(outer) ? outer : null);
+      if (outerIdx && outerIdx.length >= 4 && Array.isArray(vertsW) && vertsW.length >= 8) {
+        const vertsCanon = vertsW.map(p => p.clone().applyMatrix4(mWorldToCanon));
+        const zAvg = (vertsCanon[outerIdx[0]].z + vertsCanon[outerIdx[1]].z + vertsCanon[outerIdx[2]].z + vertsCanon[outerIdx[3]].z) / 4;
+        _outerSign = (zAvg >= 0) ? 1 : -1;
+      }
+    } catch (e) {}
+
     // Clonar geometría y llevarla a mundo antes de canonizar
     const geom = mesh.geometry.clone();
     // Asegurar matrixWorld actualizada (por seguridad)
@@ -2432,7 +2475,9 @@ _updateConnectorTooltipPosition() {
       scene,
       camera,
       controls,
+      outerSign: _outerSign,
       group,
+      beamName: (mesh && mesh.name) ? mesh.name : null,
       center,
       size,
       radius,
@@ -2495,15 +2540,22 @@ _updateConnectorTooltipPosition() {
 
     if (mode === 'plan') {
       v.camera.up.set(0, 1, 0);
-      v.camera.position.set(c.x, c.y, c.z + dist);
+      // Planta: mirar desde el ANCHO EXTERIOR hacia el interior.
+      const os = (Number.isFinite(v.outerSign) ? v.outerSign : -1);
+      v.camera.position.set(c.x, c.y, c.z + os * dist);
     } else if (mode === 'side') {
-      v.camera.up.set(0, 0, 1);
-      v.camera.position.set(c.x, c.y + dist, c.z);
+      // Lateral (Largo vs Alto): mirar en el ancho (±Y) y dejar el ANCHO EXTERIOR hacia ARRIBA.
+      const os = (Number.isFinite(v.outerSign) ? v.outerSign : -1);
+      v.camera.up.set(0, 0, os);
+      v.camera.position.set(c.x, c.y - dist, c.z);
     } else if (mode === 'iso') {
-      v.camera.up.set(0, 0, 1);
+      const os = (Number.isFinite(v.outerSign) ? v.outerSign : -1);
+      v.camera.up.set(0, 0, os);
       v.camera.position.set(c.x + dist, c.y + dist, c.z + dist);
     } else { // free
-      v.camera.up.set(0, 0, 1);
+      // Rotación libre: mantener el ANCHO EXTERIOR hacia ARRIBA (evitar que se invierta).
+      const os = (Number.isFinite(v.outerSign) ? v.outerSign : -1);
+      v.camera.up.set(0, 0, os);
       if (v.camera.position.distanceToSquared(c) < 1e-6) {
         v.camera.position.set(c.x + dist, c.y + dist, c.z + dist);
       }
@@ -2582,35 +2634,64 @@ _updateConnectorTooltipPosition() {
       // Añadir el conector
       const objectsToAdd = [obj];
 
-      // Buscar pletinas directamente en structureGroup.children
-      // El nombre tiene formato plat_A_beam_kN_M o plat_B_beam_kN_M
-      // La viga correspondiente al conector tiene su nombre en beamInfo
-      const sg = this.sceneManager.structureGroup;
-      for (const child of sg.children) {
-        if (!child || !child.isMesh || !child.userData || !child.userData.isPlate) continue;
-        // Incluir pletinas cuyo nombre referencia el mismo nivel k del conector
-        const platName = child.name || '';
-        // Extraer nombre de viga del nombre de pletina: plat_A_beam_kN_M → beam_kN_M
-        const beamPart = platName.replace(/^plat_[AB]_/, '');
-        // Verificar que esa viga pertenece a uno de los conectores buscados
-        if (keys.some(key => {
-          // key es el connectorInfo.id del conector (e.g. "C3-2" o "X3-2")
-          // beamInfo tiene aKey/bKey que son strings "k3_i2" etc.
-          // Comparar nivel k del conector con el nivel en el nombre de la pletina
-          const connInfo = obj.userData && obj.userData.connectorInfo;
-          const kConn = connInfo && connInfo.kOriginal;
-          return platName.includes(`_k${this.sceneManager._kVisible ? this.sceneManager._kVisible(kConn) : kConn}_`);
-        })) {
-          objectsToAdd.push(child);
+      // Añadir TODAS las pletinas que pertenecen a ESTE conector (no a todo el nivel).
+      // Las pletinas en esta app están creadas por viga (plat_A_<beam>, plat_B_<beam>), por lo que para
+      // reconstruir el conector completo en el visor aislado debemos tomar todas las pletinas que estén
+      // físicamente cerca del cilindro del conector.
+      try {
+        const sg = this.sceneManager.structureGroup;
+
+        // Centro del conector en mundo
+        const cpos = new THREE.Vector3();
+        if (obj.userData && obj.userData._isInstanceProxy && obj.userData._worldPos) {
+          // La geometría del proxy ya está pre-transformada a mundo; _worldPos es el centro
+          cpos.copy(obj.userData._worldPos);
+        } else {
+          obj.getWorldPosition(cpos);
         }
-      }
+
+        // Radio aproximado del conector: desde la bbox de la geometría (ya en mundo para proxies)
+        let rConn = 0.05;
+        try {
+          const bb = new THREE.Box3();
+          if (obj.userData && obj.userData._isInstanceProxy) {
+            bb.setFromBufferAttribute(obj.geometry.attributes.position);
+          } else {
+            bb.setFromObject(obj);
+          }
+          if (!bb.isEmpty()) {
+            const sz = bb.getSize(new THREE.Vector3());
+            rConn = Math.max(sz.x, sz.y, sz.z) * 0.35;
+          }
+        } catch (e) {}
+        // heurística estable
+
+        // Umbral: radio con margen + largo típico de pletina
+        const thresh = Math.max(rConn * 4.0, 0.25);
+
+        for (const child of sg.children) {
+          if (!child || !child.isMesh || !child.userData || !child.userData.isPlate) continue;
+
+          // Centro de la pletina en mundo
+          const pbb = new THREE.Box3().setFromObject(child);
+          const pc = pbb.getCenter(new THREE.Vector3());
+
+          if (pc.distanceTo(cpos) <= thresh) objectsToAdd.push(child);
+        }
+      } catch (e) {}
+
 
       for (const srcObj of objectsToAdd) {
-      try { srcObj.updateWorldMatrix(true, false); } catch (e) {}
-
       const g = srcObj.geometry.clone();
-      try { g.applyMatrix4(srcObj.matrixWorld); } catch (e) {}
-      try { g.applyMatrix4(v.worldToCanon); } catch (e) {}
+      if (srcObj.userData && srcObj.userData._isInstanceProxy) {
+        // Geometría ya en espacio mundo (iMesh.matrixWorld × instanceMatrix aplicado en find).
+        // Solo falta llevar a canónico.
+        try { g.applyMatrix4(v.worldToCanon); } catch (e) {}
+      } else {
+        try { srcObj.updateWorldMatrix(true, false); } catch (e) {}
+        try { g.applyMatrix4(srcObj.matrixWorld); } catch (e) {}
+        try { g.applyMatrix4(v.worldToCanon); } catch (e) {}
+      }
       try { g.computeBoundingBox(); g.computeBoundingSphere(); } catch (e) {}
 
       // Material (clonado para no afectar el original)
@@ -2684,12 +2765,57 @@ _updateConnectorTooltipPosition() {
     if (!g || !Array.isArray(keys) || !keys.length) return [];
     const want = new Set(keys);
     const out = [];
+
+    // Caso 1: Meshes individuales (proxies, legacy)
     g.traverse((obj) => {
       if (!obj || !obj.userData || !obj.userData.isConnector) return;
       const ci = obj.userData.connectorInfo;
       const key = this._beamViewerKeyForConnector(ci);
       if (key && want.has(key)) out.push(obj);
     });
+    if (out.length) return out;
+
+    // Caso 2: InstancedMesh — extraer geometría + instanceMatrix directamente del batch.
+    // Usamos iMesh.matrixWorld × instanceMatrix para obtener el transform en mundo,
+    // exactamente igual a como Three.js renderiza cada instancia.
+    const sg2 = this.sceneManager && this.sceneManager.structureGenerator;
+    const iMap = sg2 && sg2._instanceConnectorMap;
+    if (!iMap) return out;
+
+    const _m4 = new THREE.Matrix4();
+
+    for (const [iMesh, infoArray] of iMap) {
+      if (!iMesh || !iMesh.geometry) continue;
+      try { iMesh.updateWorldMatrix(true, false); } catch (e) {}
+
+      for (let instanceId = 0; instanceId < infoArray.length; instanceId++) {
+        const ci = infoArray[instanceId];
+        if (!ci) continue;
+        const key = this._beamViewerKeyForConnector(ci);
+        if (!key || !want.has(key)) continue;
+
+        // Matriz de la instancia en espacio local del InstancedMesh
+        iMesh.getMatrixAt(instanceId, _m4);
+        // Llevar a mundo: matrixWorld × instanceMatrix
+        const mWorld = iMesh.matrixWorld.clone().multiply(_m4);
+
+        // Clonar geometría del batch y aplicar el transform de mundo
+        const geom = iMesh.geometry.clone();
+        geom.applyMatrix4(mWorld);
+
+        const mat = iMesh.material
+          ? (Array.isArray(iMesh.material) ? iMesh.material[0].clone() : iMesh.material.clone())
+          : new THREE.MeshStandardMaterial({ color: 0x888888 });
+
+        const proxy = new THREE.Mesh(geom, mat);
+        // proxy ya está en espacio mundo — matrix = Identity, worldToCanon se aplicará luego
+        proxy.userData.isConnector = true;
+        proxy.userData.connectorInfo = ci;
+        proxy.userData._isInstanceProxy = true;
+        proxy.userData._worldPos = new THREE.Vector3().setFromMatrixPosition(mWorld);
+        out.push(proxy);
+      }
+    }
     return out;
   }
 
@@ -2703,9 +2829,12 @@ _updateConnectorTooltipPosition() {
       if (isFinite(k) && isFinite(i)) return `X:${k}:${i}`;
     }
 
-    // Polos (StructureGenerator usa 'pole_low' y 'pole_top')
+
+    // BUG-M3 fix: identificar polos por kOriginal (0 = polo bajo, N = polo alto).
+    // Antes se comparaba ci.id con 'pole_low'/'pole_top' pero el generador asigna 'C0-0'.
+    const N = state ? state.N : null;
     if (k === 0) return 'pole_low';
-    if (k === state.N) return 'pole_top';
+    if (N != null && k === N) return 'pole_top';
 
     if (!isFinite(k) || !isFinite(i)) return null;
     return `k${k}_i${i}`;
@@ -2720,8 +2849,10 @@ _updateConnectorTooltipPosition() {
     if (aKey && bKey) return (aKey < bKey) ? `${aKey}|${bKey}` : `${bKey}|${aKey}`;
     // Fallback (sin conectores centrales): derivar desde (k,i)
     const vKey = (k, i) => {
+      // BUG-M4 fix: colapsar k==0/N a polos para que el fallback sea consistente con los conectores reales.
+      const _N = (state && state.N) ? state.N : null;
       if (k === 0) return 'pole_low';
-      if (k === state.N) return 'pole_top';
+      if (_N != null && k === _N) return 'pole_top';
       return `k${k}_i${i}`;
     };
     const ak = (bi && bi.a) ? bi.a.k : null;
@@ -2845,6 +2976,45 @@ _updateConnectorTooltipPosition() {
     }
   }
 
+
+
+  /**
+   * BUG-C1 / MEJ-4: Restaurar dimensiones de viga a los valores globales del nivel.
+   * Elimina el override específico del nivel y regenera la estructura.
+   */
+  _restoreBeamEditModal() {
+    const hit = this._beamEditHit;
+    if (!hit || !hit.mesh) return;
+    if (!state.structureParams) return;
+
+    const k = hit.kLevelOriginal;
+    const keyStr = String(k);
+
+    // Si no hay override, nada que restaurar
+    if (!state.structureBeamOverrides || !state.structureBeamOverrides[keyStr]) {
+      this.showNotification('Esta viga ya usa los valores globales.', 'info');
+      return;
+    }
+
+    // Eliminar override del nivel
+    delete state.structureBeamOverrides[keyStr];
+
+    // Actualizar inputs del modal a los valores base
+    const baseW = Number(state.structureParams.beamWidthMm) || 1;
+    const baseH = Number(state.structureParams.beamHeightMm ?? state.structureParams.beamThicknessMm) || 1;
+    if (this._beamModalWidth) this._beamModalWidth.value = String(Math.round(baseW));
+    if (this._beamModalHeight) this._beamModalHeight.value = String(Math.round(baseH));
+
+    try {
+      this.sceneManager.generateConnectorStructure(state.structureParams);
+      this._maybeShowStructureWarnings();
+      this.showNotification('Dimensiones restauradas a valores globales.', 'success');
+      this._closeBeamEditModal();
+    } catch (err) {
+      console.error(err);
+      this.showNotification('No se pudo restaurar la estructura.', 'error');
+    }
+  }
 
 
   _initConnectorEditModal() {
@@ -3532,6 +3702,8 @@ _updateConnectorTooltipPosition() {
       
       if (this.infoH1) this.infoH1.textContent = state.h1.toFixed(3);
       this.updateGeometryInfo();
+      // BUG-M8 fix: actualizar badges tras cambio de diámetro de piso
+      this.updateBadges();
     }
   }
 
@@ -3627,14 +3799,14 @@ _updateConnectorTooltipPosition() {
       if (this.aNum && this.aRange) this.aNum.value = this.aRange.value;
     }
     
-    // Actualizar state temporalmente para calculo de badges
-    if (this.nNum) state.N = parseInt(this.nNum.value);
-    if (this.aNum) state.aDeg = parseFloat(this.aNum.value);
-    if (this.dmaxNum) state.Dmax = parseFloat(this.dmaxNum.value);
+    // BUG-M5 / MEJ-10 fix: usar updateStateCalculations() en lugar de recalcular parcialmente.
+    // Antes se recalculaba solo h1 y aRad, dejando Htotal y floorDiameter desactualizados durante el drag.
+    if (this.nNum) state.N = Math.max(3, parseInt(this.nNum.value) || state.N);
+    if (this.aNum) state.aDeg = parseFloat(this.aNum.value) || state.aDeg;
+    if (this.dmaxNum) state.Dmax = parseFloat(this.dmaxNum.value) || state.Dmax;
     
-    // Recalcular h1 temporalmente
-    state.aRad = (state.aDeg * Math.PI) / 180;
-    state.h1 = (state.Dmax / 2) * Math.tan(state.aRad) * Math.sin(Math.PI / state.N);
+    // Recalcular estado completo (incluye h1, Htotal, floorDiameter)
+    updateStateCalculations();
     
     // Actualizar badges inmediatamente
     this.updateBadges();
@@ -3890,8 +4062,24 @@ _updateConnectorTooltipPosition() {
     }
 
     try {
-      // Al regenerar desde el panel, se asume que se resetean overrides por nivel
+      // BUG-M6 / MEJ-5 fix: resetear TODOS los overrides y pedir confirmación si existen ediciones previas
+      const hasEdits = (
+        Object.keys(state.structureConnectorOverrides || {}).length > 0 ||
+        Object.keys(state.structureBeamOverrides || {}).length > 0 ||
+        Object.keys(state.structureIntersectionFaces || {}).length > 0 ||
+        Object.keys(state.structureIntersectionConnectorOverrides || {}).length > 0 ||
+        (state.structureExtraBeams || []).length > 0 ||
+        (state.structureDeletedBeams || []).length > 0
+      );
+      if (hasEdits && !confirm('Regenerar la estructura descartará todas las ediciones personalizadas (vigas eliminadas, conectores editados, etc.). ¿Continuar?')) {
+        return;
+      }
       state.structureConnectorOverrides = {};
+      state.structureBeamOverrides = {};
+      state.structureIntersectionFaces = {};
+      state.structureIntersectionConnectorOverrides = {};
+      state.structureExtraBeams = [];
+      state.structureDeletedBeams = [];
       this.sceneManager.generateConnectorStructure({
         cylDiameterMm,
         cylDepthMm,

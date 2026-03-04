@@ -24,6 +24,7 @@ export class SceneManager {
     this._overlayUpdater = null;
     this.lazyBuildQueue = [];
     this.lazyBuildInProgress = false;
+    this._lazyBuildVersion = 0; // BUG-C3 fix: cancel stale lazy-build tasks
     // Render-on-demand: solo re-renderizar cuando hay cambios
     this._needsRender = true;
     this._rafId = null;
@@ -288,7 +289,8 @@ export class SceneManager {
       const { N } = state;
       
       // Si N es grande (>25), usar lazy loading progresivo
-      if (N > 25 && state.rhombiVisible) {
+      // Con InstancedMesh los conectores son O(1) draw calls; umbral lazy subido a N>35
+      if (N > 35 && state.rhombiVisible) {
         this.rebuildSceneLazy();
       } else {
         this.rebuildScene();
@@ -309,6 +311,8 @@ export class SceneManager {
    * Construye la geometria en chunks para mantener UI responsive
    */
   rebuildSceneLazy() {
+    // BUG-C3 fix: invalidar builds anteriores en vuelo incrementando la versión
+    this._lazyBuildVersion = (this._lazyBuildVersion + 1) >>> 0;
     // Primero limpiamos y construimos lo basico (rapido)
     this.clearGroups({ includeStructure: false });
     clearRhombiData();
@@ -360,16 +364,22 @@ export class SceneManager {
       });
     }
 
-    // Iniciar construccion lazy
+    // Iniciar construccion lazy (pasamos la versión capturada para detección de stale)
+    const buildVersion = this._lazyBuildVersion;
     if (!this.lazyBuildInProgress) {
-      this.processLazyBuildQueue();
+      this.processLazyBuildQueue(buildVersion);
     }
   }
 
   /**
    * Procesa la cola de construccion lazy (1 chunk por frame)
    */
-  processLazyBuildQueue() {
+  processLazyBuildQueue(buildVersion) {
+    // BUG-C3 fix: si la versión no coincide, esta cola es obsoleta; abortar.
+    if (buildVersion !== this._lazyBuildVersion) {
+      this.lazyBuildInProgress = false;
+      return;
+    }
     if (this.lazyBuildQueue.length === 0) {
       this.lazyBuildInProgress = false;
       return;
@@ -379,9 +389,14 @@ export class SceneManager {
     const buildTask = this.lazyBuildQueue.shift();
     
     requestAnimationFrame(() => {
+      // Verificar de nuevo en el siguiente frame (pudo haber llegado otro rebuild)
+      if (buildVersion !== this._lazyBuildVersion) {
+        this.lazyBuildInProgress = false;
+        return;
+      }
       buildTask();
       this._needsRender = true;
-      this.processLazyBuildQueue();
+      this.processLazyBuildQueue(buildVersion);
     });
   }
 
@@ -497,9 +512,42 @@ export class SceneManager {
 
     this.raycaster.setFromCamera(this._ndc, this.camera);
     const hits = this.raycaster.intersectObjects(this.structureGroup.children, true);
+
     for (const h of hits) {
       const obj = h.object;
-      if (obj && obj.userData && obj.userData.isConnector && obj.userData.connectorInfo) {
+      if (!obj) continue;
+
+      // ── InstancedMesh (batch de conectores) ──────────────────────────────
+      if (obj.isInstancedMesh && obj.userData.isConnectorBatch) {
+        const instanceId = h.instanceId;
+        if (instanceId == null) continue;
+        const sg = this.structureGenerator;
+        const infoArray = sg && sg._instanceConnectorMap ? sg._instanceConnectorMap.get(obj) : null;
+        if (!infoArray) continue;
+        const info = infoArray[instanceId];
+        if (!info) continue;
+
+        // Construir un Object3D temporal que representa la instancia seleccionada
+        // (necesario para outlines y para que el código de UI tenga un .mesh con userData)
+        const proxyMesh = this._getOrCreateConnectorProxy(obj, instanceId, info);
+
+        return {
+          mesh: proxyMesh,
+          iMesh: obj,           // referencia al InstancedMesh real
+          instanceId,
+          kOriginal: info.kOriginal,
+          kVisible: info.kVisible,
+          i: info.i,
+          isIntersection: !!info.isIntersection,
+          faceK: info.faceK,
+          faceI: info.faceI,
+          isPoleLow: info.kOriginal === 0,
+          isPoleTop: info.kOriginal === state.N,
+        };
+      }
+
+      // ── Mesh individual (legado / fallback) ──────────────────────────────
+      if (obj.userData && obj.userData.isConnector && obj.userData.connectorInfo) {
         const info = obj.userData.connectorInfo;
         return {
           mesh: obj,
@@ -515,6 +563,40 @@ export class SceneManager {
       }
     }
     return null;
+  }
+
+  /**
+   * Crea (o reutiliza) un Object3D proxy que representa una instancia concreta
+   * dentro de un InstancedMesh. El proxy tiene position/quaternion correctos
+   * y userData.connectorInfo completo, de modo que el resto del código de UI
+   * puede tratarlo como si fuera un Mesh individual.
+   */
+  _getOrCreateConnectorProxy(iMesh, instanceId, info) {
+    const sg = this.structureGenerator;
+    const meshData = sg && sg._instanceConnectorMeshData
+      ? Array.from(sg._instanceConnectorMeshData.values()).find(d => d.iMesh === iMesh && d.instanceId === instanceId)
+      : null;
+
+    const proxy = new THREE.Object3D();
+    if (meshData) {
+      proxy.position.copy(meshData.pos);
+      proxy.quaternion.copy(meshData.quat);
+      // Guardar dims para outline
+      proxy.userData._cylRadius = meshData.cylRadius;
+      proxy.userData._cylDepth = meshData.cylDepth;
+    } else {
+      // Extraer matrix de la instancia como fallback
+      const m4 = new THREE.Matrix4();
+      iMesh.getMatrixAt(instanceId, m4);
+      proxy.position.setFromMatrixPosition(m4);
+      proxy.quaternion.setFromRotationMatrix(m4);
+    }
+    proxy.userData.isConnector = true;
+    proxy.userData.connectorInfo = info;
+    proxy.userData._isInstanceProxy = true;
+    proxy.userData._iMesh = iMesh;
+    proxy.userData._instanceId = instanceId;
+    return proxy;
   }
 
   /**
@@ -583,6 +665,8 @@ export class SceneManager {
     state.structureParams = { ...params };
     this._structureSignature = this.getStructureSignature(state.structureParams);
 
+    // BUG-M7 fix: limpiar outlines de selección antes de destruir los meshes
+    this.cleanupSelectionOutlines();
     this.structureGenerator.clear();
     const genResult = this.structureGenerator.generate(params);
     state.lastStructureWarnings = (genResult && genResult.warnings) ? genResult.warnings : [];
@@ -622,38 +706,49 @@ export class SceneManager {
    */
   setSelectedConnector(mesh) {
     // Limpiar outline anterior
-    if (this._selectedConnectorMesh && this._selectedConnectorMesh.userData) {
-      const prev = this._selectedConnectorMesh;
-      const ol = prev.userData._zvOutline;
-      if (ol && ol.parent) {
-        try { ol.parent.remove(ol); } catch (e) {}
-      }
-      if (ol && ol.geometry) {
-        try { ol.geometry.dispose(); } catch (e) {}
-      }
-      if (ol && ol.material) {
-        try { ol.material.dispose(); } catch (e) {}
-      }
-      prev.userData._zvOutline = null;
-    }
+    this._clearConnectorOutline();
 
     this._selectedConnectorMesh = null;
     if (!mesh) return;
 
-    // Crear outline si hay geometria
+    // ── Proxy de InstancedMesh: crear un Mesh temporal sólo para el outline ──
+    if (mesh.userData && mesh.userData._isInstanceProxy) {
+      try {
+        const cylRadius = mesh.userData._cylRadius || 0.015;
+        const cylDepth  = mesh.userData._cylDepth  || 0.030;
+        const seg = 20;
+        const outlineGeom = new THREE.CylinderGeometry(cylRadius, cylRadius, cylDepth, seg, 1, false);
+        const outlineMat = new THREE.LineBasicMaterial({
+          color: 0xffffff, transparent: true, opacity: 0.9,
+          depthTest: false, depthWrite: false,
+        });
+        const edges = new THREE.EdgesGeometry(outlineGeom);
+        outlineGeom.dispose();
+        const outline = new THREE.LineSegments(edges, outlineMat);
+        outline.name = 'zvConnectorOutline';
+        outline.renderOrder = 9999;
+        outline.frustumCulled = false;
+        outline.position.copy(mesh.position);
+        outline.quaternion.copy(mesh.quaternion);
+        this.structureGroup.add(outline);
+        // Guardar para limpieza posterior
+        mesh.userData._zvOutline = outline;
+        mesh.userData._zvOutlineInGroup = true; // outline está en structureGroup, no en mesh
+      } catch (e) {
+        console.warn('No se pudo crear outline del conector instanciado', e);
+      }
+      this._selectedConnectorMesh = mesh;
+      this._needsRender = true;
+      return;
+    }
+
+    // ── Mesh individual (legado) ──────────────────────────────────────────
     if (mesh.geometry) {
       try {
         const edges = new THREE.EdgesGeometry(mesh.geometry);
-        // Nota: NO escalamos el outline. Las vigas/conectores pueden estar modelados en coordenadas
-        // absolutas (world-like) dentro de la geometria; escalar el outline alrededor del origen local
-        // provoca un desplazamiento visual (se ve "al lado"). Para asegurar visibilidad, desactivamos
-        // depthTest/depthWrite y usamos renderOrder alto.
         const mat = new THREE.LineBasicMaterial({
-          color: 0xffffff,
-          transparent: true,
-          opacity: 0.9,
-          depthTest: false,
-          depthWrite: false,
+          color: 0xffffff, transparent: true, opacity: 0.9,
+          depthTest: false, depthWrite: false,
         });
         const outline = new THREE.LineSegments(edges, mat);
         outline.name = 'zvConnectorOutline';
@@ -668,6 +763,26 @@ export class SceneManager {
 
     this._selectedConnectorMesh = mesh;
     this._needsRender = true;
+  }
+
+  /** Limpia el outline del conector seleccionado (maneja proxy e individual). */
+  _clearConnectorOutline() {
+    if (!this._selectedConnectorMesh || !this._selectedConnectorMesh.userData) return;
+    const prev = this._selectedConnectorMesh;
+    const ol = prev.userData._zvOutline;
+    if (ol) {
+      if (prev.userData._zvOutlineInGroup) {
+        // Outline añadido a structureGroup (caso proxy)
+        if (ol.parent) { try { ol.parent.remove(ol); } catch(e){} }
+      } else {
+        // Outline hijo del mesh
+        if (ol.parent) { try { ol.parent.remove(ol); } catch(e){} }
+      }
+      if (ol.geometry) { try { ol.geometry.dispose(); } catch(e){} }
+      if (ol.material) { try { ol.material.dispose(); } catch(e){} }
+      prev.userData._zvOutline = null;
+      prev.userData._zvOutlineInGroup = false;
+    }
   }
 
 
@@ -763,8 +878,9 @@ export class SceneManager {
       // Guardamos proyecciones sobre la directriz para poder definir presets de offset.
       let best = null; // { angDeg, sEdge, sInner, tCenter }
 
-      this.structureGroup.children.forEach((obj) => {
+      this.structureGroup.traverse((obj) => {
         if (!obj || !obj.userData || !obj.userData.beamInfo || !Array.isArray(obj.userData.objVertices)) return;
+        if (obj.isInstancedMesh) return; // InstancedMesh no tiene beamInfo individual
         const bi = obj.userData.beamInfo;
         const verts = obj.userData.objVertices;
         if (!bi.a || !bi.b) return;
@@ -843,22 +959,46 @@ export class SceneManager {
    * Replica de la logica de parametros por nivel (igual al generador) para uso en UI/presets.
    * Retorna unidades en metros.
    */
-  _getConnectorParamsForK(kOriginal) {
+  _getConnectorParamsForK(kOriginal, isIntersection = false) {
     try {
       if (!state.structureParams) return null;
+      // MEJ-3/BUG-L4: delegar al método público de StructureGenerator para evitar duplicación
+      if (this.structureGenerator && typeof this.structureGenerator.getCylParamsForK === 'function') {
+        const p = this.structureGenerator.getCylParamsForK(kOriginal, isIntersection, state.structureParams);
+        return { depth: p.depth, offset: p.offset };
+      }
+      // Fallback si structureGenerator no disponible
       const baseCylDepthMm = Number(state.structureParams.cylDepthMm) || 1;
       const overrides = (state.structureConnectorOverrides && typeof state.structureConnectorOverrides === 'object')
-        ? state.structureConnectorOverrides
-        : {};
+        ? state.structureConnectorOverrides : {};
       const ov = overrides[String(kOriginal)] || overrides[kOriginal];
       const pMm = (ov && ov.cylDepthMm != null) ? Number(ov.cylDepthMm) : baseCylDepthMm;
       const offMm = (ov && ov.offsetMm != null && isFinite(Number(ov.offsetMm))) ? Math.max(0, Number(ov.offsetMm)) : 0;
       const depth = Math.max(0.001, (isFinite(pMm) && pMm > 0 ? pMm : baseCylDepthMm) / 1000);
-      const offset = Math.max(0, offMm / 1000);
-      return { depth, offset };
+      return { depth, offset: Math.max(0, offMm / 1000) };
     } catch (e) {
       return null;
     }
+  }
+
+  /**
+   * BUG-M7 / MEJ-6: Limpia outlines de selección antes de que los meshes sean destruidos.
+   * Debe llamarse ANTES de clearGroups() o generateConnectorStructure().
+   */
+  cleanupSelectionOutlines() {
+    // Limpiar outline de conector seleccionado (maneja proxy e individual)
+    this._clearConnectorOutline();
+    this._selectedConnectorMesh = null;
+
+    // Limpiar outline de viga seleccionada
+    if (this._selectedBeamMesh && this._selectedBeamMesh.userData) {
+      const ol = this._selectedBeamMesh.userData._zvBeamOutline;
+      if (ol && ol.parent) { try { ol.parent.remove(ol); } catch (e) {} }
+      if (ol && ol.geometry) { try { ol.geometry.dispose(); } catch (e) {} }
+      if (ol && ol.material) { try { ol.material.dispose(); } catch (e) {} }
+      this._selectedBeamMesh.userData._zvBeamOutline = null;
+    }
+    this._selectedBeamMesh = null;
   }
 
   /**
