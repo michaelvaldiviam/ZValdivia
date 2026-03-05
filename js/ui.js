@@ -495,8 +495,15 @@ _handleConnectorTap(hit) {
   if (!hit || !hit.mesh) return;
 
   const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
-  const same = (this._lastConnectorMeshUuid && hit.mesh.uuid === this._lastConnectorMeshUuid);
   const dt = (this._lastConnectorTapTime != null) ? (now - this._lastConnectorTapTime) : 1e9;
+
+  // ID estable: con InstancedMesh el proxy se crea nuevo en cada tap (uuid diferente).
+  // Usamos iMesh.uuid + instanceId como identificador estable. Para Meshes legacy: mesh.uuid.
+  const stableId = (hit.iMesh != null && hit.instanceId != null)
+    ? (hit.iMesh.uuid + '_' + hit.instanceId)
+    : hit.mesh.uuid;
+
+  const same = (this._lastConnectorStableId != null && stableId === this._lastConnectorStableId);
 
   // Primer tap: tooltip + resaltado. Segundo tap rapido en el mismo conector: abrir modal.
   const DOUBLE_TAP_MS = 650;
@@ -507,11 +514,12 @@ _handleConnectorTap(hit) {
     // Segundo tap: abrir modal
     this._hideConnectorTooltip();
     this.editConnectorForSelection(hit);
+    this._lastConnectorStableId = null; // reset para no triple-abrir
     return;
   }
 
-  // Tap a un conector distinto (o demasiado lento): mostrar tooltip
-  this._lastConnectorMeshUuid = hit.mesh.uuid;
+  // Primer tap: guardar ID estable, mostrar tooltip
+  this._lastConnectorStableId = stableId;
   this._showConnectorTooltip(hit);
 }
 
